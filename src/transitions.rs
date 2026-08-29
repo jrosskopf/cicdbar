@@ -25,6 +25,12 @@ pub struct NotifyState {
 pub struct Seen {
     pub status: String,
     pub conclusion: Option<String>,
+    /// Recorded while the run was in flight, so the finish notification can
+    /// name the runner without a second jobs lookup.
+    #[serde(default)]
+    pub runner: Option<String>,
+    #[serde(default)]
+    pub estimate: Option<crate::money::Usd>,
     /// The notification this run currently occupies, so a finish can replace
     /// the start rather than stacking a second one.
     pub notif_id: Option<u32>,
@@ -37,6 +43,11 @@ pub enum Event {
     Finished {
         run: RunSummary,
         previous_notif_id: Option<u32>,
+        /// What it ran on, remembered from when it was in flight.
+        runner: Option<String>,
+        /// Blacksmith cost estimate. `None` for GitHub-hosted runners, whose
+        /// spend comes from the billing API and is never guessed per-run.
+        estimate: Option<crate::money::Usd>,
     },
 }
 
@@ -89,10 +100,14 @@ pub fn diff_at(state: &NotifyState, runs: &[RunSummary], now: u64) -> (Vec<Event
                 None if complete => events.push(Event::Finished {
                     run: run.clone(),
                     previous_notif_id: None,
+                    runner: None,
+                    estimate: None,
                 }),
                 Some(p) if !is_complete(&p.status) && complete => events.push(Event::Finished {
                     run: run.clone(),
                     previous_notif_id: p.notif_id,
+                    runner: p.runner.clone(),
+                    estimate: p.estimate,
                 }),
                 _ => {}
             }
@@ -104,6 +119,8 @@ pub fn diff_at(state: &NotifyState, runs: &[RunSummary], now: u64) -> (Vec<Event
                 status: run.status.clone(),
                 conclusion: run.conclusion.clone(),
                 notif_id: previous.and_then(|p| p.notif_id),
+                runner: previous.and_then(|p| p.runner.clone()),
+                estimate: previous.and_then(|p| p.estimate),
                 last_seen: now,
             },
         );
@@ -153,6 +170,16 @@ pub fn should_notify(cfg: &NotificationConfig, event: &Event, after_failure: boo
     }
 }
 
+/// Wall-clock time from start to last update, for a completed run.
+fn duration(run: &RunSummary) -> Option<String> {
+    let start: jiff::Timestamp = run.started_at.as_ref()?.parse().ok()?;
+    let end: jiff::Timestamp = run.updated_at.as_ref()?.parse().ok()?;
+    if end < start {
+        return None;
+    }
+    Some(crate::cycle::elapsed_short(start, end))
+}
+
 fn escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -171,7 +198,12 @@ pub fn render(event: &Event) -> (String, String, Urgency) {
             escape(&run.branch),
             Urgency::Low,
         ),
-        Event::Finished { run, .. } => {
+        Event::Finished {
+            run,
+            runner,
+            estimate,
+            ..
+        } => {
             let (glyph, word, urgency) = match run.conclusion.as_deref() {
                 Some("success") => ("✔", "succeeded", Urgency::Normal),
                 Some("failure") => ("✖", "failed", Urgency::Critical),
@@ -180,9 +212,21 @@ pub fn render(event: &Event) -> (String, String, Urgency) {
                 Some(other) => ("•", other, Urgency::Normal),
                 None => ("•", "finished", Urgency::Normal),
             };
+            // branch · duration · runner · ~cost, dropping whatever is unknown
+            // so the line never ends in a dangling separator.
+            let mut parts = vec![escape(&run.branch)];
+            if let Some(d) = duration(run) {
+                parts.push(d);
+            }
+            if let Some(r) = runner {
+                parts.push(escape(r));
+            }
+            if let Some(c) = estimate {
+                parts.push(format!("~{c}"));
+            }
             (
                 format!("{glyph} {where_} {word}"),
-                escape(&run.branch),
+                parts.join(" · "),
                 urgency,
             )
         }

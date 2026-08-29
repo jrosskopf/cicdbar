@@ -121,6 +121,8 @@ fn old_completed_runs_are_pruned_so_the_state_file_cannot_grow_forever() {
                 status: "completed".into(),
                 conclusion: Some("success".into()),
                 notif_id: None,
+                runner: None,
+                estimate: None,
                 last_seen: 0, // epoch: ancient
             },
         );
@@ -157,6 +159,15 @@ fn cfg() -> NotificationConfig {
     NotificationConfig::default()
 }
 
+fn fin(r: RunSummary) -> Event {
+    Event::Finished {
+        run: r,
+        previous_notif_id: None,
+        runner: None,
+        estimate: None,
+    }
+}
+
 #[test]
 fn on_finish_failures_suppresses_successes_but_not_failures() {
     let mut c = cfg();
@@ -165,10 +176,14 @@ fn on_finish_failures_suppresses_successes_but_not_failures() {
     let ok = Event::Finished {
         run: run(1, "completed", Some("success")),
         previous_notif_id: None,
+        runner: None,
+        estimate: None,
     };
     let bad = Event::Finished {
         run: run(2, "completed", Some("failure")),
         previous_notif_id: None,
+        runner: None,
+        estimate: None,
     };
     assert!(!should_notify(&c, &ok, false));
     assert!(should_notify(&c, &bad, false));
@@ -186,6 +201,8 @@ fn failures_and_recoveries_adds_the_first_success_after_a_failure() {
     let ok = Event::Finished {
         run: run(1, "completed", Some("success")),
         previous_notif_id: None,
+        runner: None,
+        estimate: None,
     };
     assert!(
         !should_notify(&c, &ok, false),
@@ -208,6 +225,8 @@ fn the_default_config_notifies_starts_and_every_finish() {
     let ok = Event::Finished {
         run: run(2, "completed", Some("success")),
         previous_notif_id: None,
+        runner: None,
+        estimate: None,
     };
     assert!(should_notify(&c, &ok, false));
 }
@@ -248,6 +267,8 @@ fn cancelled_runs_are_not_reported_as_failures() {
     let cancelled = Event::Finished {
         run: run(1, "completed", Some("cancelled")),
         previous_notif_id: None,
+        runner: None,
+        estimate: None,
     };
     let (summary, _, urgency) = render(&cancelled);
     assert!(!summary.contains("failed"), "got {summary}");
@@ -255,10 +276,68 @@ fn cancelled_runs_are_not_reported_as_failures() {
 }
 
 #[test]
+fn the_body_carries_duration_runner_and_blacksmith_cost() {
+    // The cost line is the thing a generic CI notifier cannot tell you.
+    let mut r = run(1, "completed", Some("failure"));
+    r.started_at = Some("2026-08-29T06:24:00Z".into());
+    r.updated_at = Some("2026-08-29T06:28:12Z".into());
+    let e = Event::Finished {
+        run: r,
+        previous_notif_id: None,
+        runner: Some("blacksmith-4vcpu-ubuntu".into()),
+        estimate: Some(cicdbar::money::Usd::from_f64(0.19)),
+    };
+    let (_, body, _) = render(&e);
+    assert!(body.contains("fix/worker-binary-race"), "{body}");
+    assert!(body.contains("4m12s"), "duration missing: {body}");
+    assert!(
+        body.contains("blacksmith-4vcpu-ubuntu"),
+        "runner missing: {body}"
+    );
+    assert!(body.contains("$0.19"), "cost missing: {body}");
+}
+
+#[test]
+fn a_github_hosted_run_shows_no_invented_cost() {
+    // Only Blacksmith minutes are priced locally; GitHub spend comes from the
+    // billing API and must never be guessed at per-run.
+    let mut r = run(1, "completed", Some("success"));
+    r.updated_at = Some("2026-08-29T06:25:00Z".into());
+    let e = Event::Finished {
+        run: r,
+        previous_notif_id: None,
+        runner: Some("github-hosted".into()),
+        estimate: None,
+    };
+    let (_, body, _) = render(&e);
+    assert!(body.contains("github-hosted"));
+    assert!(!body.contains('$'), "no cost should be shown: {body}");
+}
+
+#[test]
+fn a_body_degrades_gracefully_when_nothing_extra_is_known() {
+    let mut r = run(1, "completed", Some("success"));
+    r.updated_at = None;
+    let e = Event::Finished {
+        run: r,
+        previous_notif_id: None,
+        runner: None,
+        estimate: None,
+    };
+    let (_, body, _) = render(&e);
+    assert_eq!(
+        body, "fix/worker-binary-race",
+        "just the branch, no stray separators"
+    );
+}
+
+#[test]
 fn a_failure_renders_as_critical_and_names_the_repo_and_workflow() {
     let e = Event::Finished {
         run: run(1, "completed", Some("failure")),
         previous_notif_id: None,
+        runner: None,
+        estimate: None,
     };
     let (summary, body, urgency) = render(&e);
     assert!(summary.contains("heron"));
@@ -281,10 +360,7 @@ fn a_start_renders_as_low_urgency() {
 fn markup_in_a_branch_name_cannot_break_the_notification_body() {
     let mut r = run(1, "completed", Some("success"));
     r.branch = "feature/a&b<c>".into();
-    let (_, body, _) = render(&Event::Finished {
-        run: r,
-        previous_notif_id: None,
-    });
+    let (_, body, _) = render(&fin(r));
     assert!(
         body.contains("&amp;") && body.contains("&lt;"),
         "unescaped: {body}"

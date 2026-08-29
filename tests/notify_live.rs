@@ -14,6 +14,24 @@ fn makoctl_list() -> String {
         .unwrap_or_default()
 }
 
+/// mako holds the full notification, body included, which `makoctl list`
+/// does not print. This is the only way to assert on what we actually sent.
+fn mako_notifications() -> String {
+    std::process::Command::new("busctl")
+        .args([
+            "--user",
+            "--json=short",
+            "call",
+            "org.freedesktop.Notifications",
+            "/fr/emersion/Mako",
+            "fr.emersion.Mako",
+            "ListNotifications",
+        ])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default()
+}
+
 fn dismiss_all() {
     let _ = std::process::Command::new("makoctl")
         .args(["dismiss", "-a"])
@@ -204,6 +222,27 @@ fn the_real_binary_notifies_about_a_real_run_transition() {
     assert!(
         listed.contains("App name: cicdbar"),
         "the binary should have raised a real notification; daemon shows: {listed}"
+    );
+    dismiss_all();
+}
+
+#[test]
+#[ignore = "talks to the real session D-Bus and notification daemon"]
+fn the_body_we_send_is_the_body_the_daemon_records() {
+    let n = Notifier::connect().expect("session bus");
+    let body = "main · 1m49s · blacksmith-4vcpu-ubuntu · ~$0.19";
+    n.send(None, "cicdbar-test body check", body, Urgency::Normal, "b1")
+        .expect("send");
+
+    let history = mako_notifications();
+    assert!(
+        history.contains("cicdbar-test body check"),
+        "summary missing from the daemon's record"
+    );
+    assert!(
+        history.contains("blacksmith-4vcpu-ubuntu"),
+        "the runner and cost must survive the round trip: {}",
+        &history[..history.len().min(400)]
     );
     dismiss_all();
 }

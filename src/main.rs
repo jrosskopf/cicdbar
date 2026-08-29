@@ -196,7 +196,7 @@ fn run(args: &Args) -> anyhow::Result<String> {
     snap.failure_runs = ci.failures;
     snap.repos_polled = ci.repos_polled;
     snap.in_flight_estimate = ci.in_flight_estimate;
-    snap.in_flight = ci.in_flight;
+    snap.in_flight = ci.in_flight.clone();
     snap.in_flight
         .sort_by_key(|f| f.run.started_at.clone().unwrap_or_default());
 
@@ -257,7 +257,7 @@ fn run(args: &Args) -> anyhow::Result<String> {
     // Only when the run data is genuinely fresh: a stale cache would replay
     // transitions that did not happen.
     if cfg.notifications.enabled && !args.no_notify && !runs_were_stale {
-        if let Err(e) = announce(&cfg, &cache, &ci.all_runs) {
+        if let Err(e) = announce(&cfg, &cache, &ci.all_runs, &ci.in_flight) {
             snap.notes.push(format!("notifications: {e}"));
         }
     }
@@ -283,11 +283,23 @@ fn announce(
     cfg: &Config,
     cache: &Cache,
     runs: &[cicdbar::providers::github_runs::RunSummary],
+    in_flight: &[cicdbar::providers::github_runs::InFlight],
 ) -> anyhow::Result<()> {
     const KEY: &str = "notify-state";
 
     let previous: NotifyState = cache.read_raw(KEY).unwrap_or_default();
-    let (events, next) = transitions::diff(&previous, runs);
+    let (events, mut next) = transitions::diff(&previous, runs);
+
+    // Record what each in-flight run is executing on. When it later finishes
+    // the notification can name the runner and its Blacksmith cost without a
+    // second jobs lookup -- by then the run is complete and the information
+    // would cost another request per run.
+    for f in in_flight {
+        if let Some(seen) = next.runs.get_mut(&f.run.id) {
+            seen.runner = Some(f.runner.short());
+            seen.estimate = f.estimate;
+        }
+    }
     // Persist before notifying: a crash mid-send must not replay the whole
     // batch on the next tick.
     cache.write_raw(KEY, &next);

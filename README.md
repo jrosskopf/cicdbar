@@ -174,6 +174,14 @@ cicdbar can raise a desktop notification (D-Bus,
 run occupies **one** notification for its whole life: the "started" one is
 replaced in place by its result rather than stacking a second.
 
+The body carries what a generic CI notifier cannot: branch, duration, runner,
+and — for Blacksmith runs — the estimated cost of that run.
+
+```
+✖ heron · Build failed
+fix/worker-binary-race · 4m12s · blacksmith-4vcpu-ubuntu · ~$0.19
+```
+
 Failures are sent at critical urgency, so daemons that honour it keep them
 until dismissed.
 
