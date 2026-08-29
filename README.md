@@ -62,6 +62,13 @@ paru -S cicdbar        # builds from source
 paru -S cicdbar-bin    # prebuilt static binary
 ```
 
+**uv / uvx** — no Rust toolchain needed
+
+```sh
+uvx cicdbar --format '{total_usd} · {run_glyph}{running}'   # run it once
+uv tool install cicdbar                                     # or keep it
+```
+
 **cargo**
 
 ```sh

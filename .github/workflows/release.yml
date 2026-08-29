@@ -64,3 +64,73 @@ jobs:
             cicdbar-*.tar.gz
             cicdbar-*.tar.gz.sha256
           generate_release_notes: true
+
+  # PyPI wheels, so `uvx cicdbar` works without a Rust toolchain.
+  #
+  # Linux only, deliberately: this is a waybar module talking to D-Bus, so a
+  # macOS or Windows wheel would install a binary that cannot do anything.
+  pypi-wheels:
+    name: Wheel ${{ matrix.b2w_platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            b2w_platform: linux-x86_64
+            binary: cicdbar
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package wheel
+        shell: bash
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['packages'][0]['version'])")
+          pip install vendor/bin-to-wheel
+          bin-to-wheel \
+            --name cicdbar \
+            --version "$VERSION" \
+            --binary "target/${{ matrix.target }}/release/${{ matrix.binary }}" \
+            --platform "${{ matrix.b2w_platform }}" \
+            --description "waybar widget for GitHub Actions + Blacksmith CI/CD spend and live job status" \
+            --author "Joachim Rosskopf" \
+            --license "MIT" \
+            --entry-point cicdbar \
+            --output-dir dist
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.b2w_platform }}
+          path: dist/*.whl
+
+  pypi-publish:
+    name: Publish to PyPI
+    needs: pypi-wheels
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

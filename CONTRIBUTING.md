@@ -46,3 +46,19 @@ exactly, and CI fails the release if they ever drift.
 
 There is no semantic promise in the numbers: a later date is a later release,
 nothing more. Breaking changes are called out in the release notes.
+
+## Releasing
+
+Tagging `vYYYY.M.D` builds and publishes everything:
+
+1. **GitHub Release** — static musl tarball plus sha256.
+2. **PyPI wheels** — a `linux-x86_64` wheel built with
+   [`bin-to-wheel`](https://github.com/DataZooDE/bin-to-wheel), vendored at
+   `vendor/bin-to-wheel`, so `uvx cicdbar` works with no Rust toolchain.
+   Published by OIDC trusted publishing; there is no API token anywhere.
+   Clone with `--recurse-submodules`, or run `git submodule update --init`.
+
+Linux-only wheels are deliberate: this is a waybar module talking to D-Bus,
+so a macOS or Windows wheel would install a binary that cannot do anything.
+
+AUR is a manual step afterwards; see `packaging/aur/README.md`.
