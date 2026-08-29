@@ -127,25 +127,41 @@ fn demo_scenarios_cover_the_states_the_bar_can_be_in() {
     let clean = Snapshot::demo_scenario(1);
     assert_eq!(clean.running, 0);
     assert_eq!(clean.failures, 0);
-    assert!(render::expand("{run_glyph}", &clean).unwrap().starts_with('✓'));
+    assert!(render::expand("{run_glyph}", &clean)
+        .unwrap()
+        .starts_with('✓'));
     assert_eq!(clean.severity(), Severity::Ok);
 
     let running = Snapshot::demo_scenario(2);
     assert!(running.running > 0);
-    assert!(render::expand("{run_glyph}", &running).unwrap().starts_with('●'));
+    assert!(render::expand("{run_glyph}", &running)
+        .unwrap()
+        .starts_with('●'));
 
     let failing = Snapshot::demo_scenario(3);
     assert!(failing.failures > 0);
-    assert!(render::expand("{run_glyph}", &failing).unwrap().starts_with('✖'));
+    assert!(render::expand("{run_glyph}", &failing)
+        .unwrap()
+        .starts_with('✖'));
 
     let over = Snapshot::demo_scenario(4);
-    assert_eq!(over.severity(), Severity::Critical, "over budget must be critical");
+    assert_eq!(
+        over.severity(),
+        Severity::Critical,
+        "over budget must be critical"
+    );
 
     // Scenarios wrap, so a cycling demo script never falls off the end.
-    assert_eq!(Snapshot::demo_scenario(5).running, Snapshot::demo_scenario(1).running);
+    assert_eq!(
+        Snapshot::demo_scenario(5).running,
+        Snapshot::demo_scenario(1).running
+    );
     // And every scenario renders valid waybar JSON.
     for n in 1..=4 {
-        let out = render::waybar_json(&Snapshot::demo_scenario(n), "{total_usd} {run_glyph}{running}");
+        let out = render::waybar_json(
+            &Snapshot::demo_scenario(n),
+            "{total_usd} {run_glyph}{running}",
+        );
         serde_json::from_str::<serde_json::Value>(&out).expect("valid json");
     }
 }

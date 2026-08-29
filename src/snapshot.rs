@@ -122,7 +122,10 @@ impl Snapshot {
                 s.running = 1;
                 s.failures = 2;
                 s.github.net = Usd::from_f64(291.20);
-                s.failure_runs = vec![failed_run("widget-service", "CI"), failed_run("api-gateway", "nightly")];
+                s.failure_runs = vec![
+                    failed_run("widget-service", "CI"),
+                    failed_run("api-gateway", "nightly"),
+                ];
             }
             // Over budget: projection past 100%.
             _ => {
