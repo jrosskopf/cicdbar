@@ -1,0 +1,26 @@
+# cicdbar — CI/CD spend + job status widget
+# Monthly budget the projection is coloured against. Adjust to taste.
+budget_usd = 400.0
+
+[github]
+# Only orgs whose billing you can actually read. Verified 2026-08-29:
+#   DataZooDE  ok
+#   anofox     ok (no spend)
+#   octoopt    403 "No access to billing usage data"
+#   sparrowbi  403
+#   zoitech-internal  404
+orgs = ["DataZooDE", "anofox"]
+token_source = "gh-cli"
+
+[runs]
+active_days = 7
+max_repos = 15
+max_tooltip_runs = 8
+
+[blacksmith]
+enabled = true
+org = "DataZooDE"
+
+[cache]
+billing_ttl_secs = 900
+runs_ttl_secs = 45

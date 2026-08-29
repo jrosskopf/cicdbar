@@ -338,6 +338,9 @@ impl std::ops::Deref for InFlight {
 
 /// One org's CI picture. Per-repo failures are tolerated: a repo we cannot
 /// read degrades to an error line, never to a missing widget.
+///
+/// Repos are polled concurrently -- serially this takes ~15s for 15 repos,
+/// which would block waybar's tick.
 pub fn org_status(
     http: &Http,
     org: &str,
@@ -349,42 +352,35 @@ pub fn org_status(
     let mut st = CiStatus::default();
     st.repos_polled = repos.len();
 
-    for repo in &repos {
+    let per_repo: Vec<RepoOutcome> = fan_out(&repos, |repo| {
         let runs = match recent_runs(http, &repo.owner, &repo.name, 20) {
             Ok(r) => r,
             Err(e) => {
-                st.errors.push(format!("{}/{}: {}", repo.owner, repo.name, e.short()));
-                continue;
+                return RepoOutcome {
+                    error: Some(format!("{}/{}: {}", repo.owner, repo.name, e.short())),
+                    ..Default::default()
+                }
             }
         };
-        for run in &runs {
-            if run.is_queued() {
-                st.queued += 1;
-            }
-            if run.is_running() {
-                st.running += 1;
-                let (runner, estimate) =
-                    match jobs_for_run(http, &run.owner, &run.repo, run.id) {
-                        Ok(jobs) => {
-                            let running_job = jobs
-                                .iter()
-                                .find(|j| j.status == "in_progress")
-                                .or_else(|| jobs.first());
-                            let kind = running_job
-                                .map(|j| j.runner())
-                                .unwrap_or(RunnerKind::Unknown);
-                            let secs: i64 = jobs.iter().map(|j| j.elapsed_secs(now)).sum();
-                            let est = estimated_cost(&kind, secs);
-                            (kind, est)
-                        }
-                        Err(_) => (RunnerKind::Unknown, None),
-                    };
-                if let Some(e) = estimate {
-                    st.in_flight_estimate += e;
-                }
-                st.in_flight.push(InFlight { run: run.clone(), runner, estimate });
-            }
+        let mut out = RepoOutcome::default();
+        let in_progress: Vec<&RunSummary> = runs.iter().filter(|r| r.is_running()).collect();
+        // Job detail is another request each, so only for runs actually running.
+        let job_sets: Vec<Vec<JobInfo>> = fan_out(&in_progress, |run| {
+            jobs_for_run(http, &run.owner, &run.repo, run.id).unwrap_or_default()
+        });
+        for (run, jobs) in in_progress.iter().zip(job_sets) {
+            let running_job = jobs
+                .iter()
+                .find(|j| j.status == "in_progress")
+                .or_else(|| jobs.first());
+            let kind = running_job.map(|j| j.runner()).unwrap_or(RunnerKind::Unknown);
+            let secs: i64 = jobs.iter().map(|j| j.elapsed_secs(now)).sum();
+            let estimate = estimated_cost(&kind, secs);
+            out.in_flight.push(InFlight { run: (*run).clone(), runner: kind, estimate });
         }
+        out.running = in_progress.len();
+        out.queued = runs.iter().filter(|r| r.is_queued()).count();
+
         // A failure counts when it is the newest run of its workflow on the
         // default branch -- i.e. still broken, not merely broken once.
         let mut seen = std::collections::BTreeSet::new();
@@ -393,9 +389,68 @@ pub fn org_status(
                 continue;
             }
             if run.conclusion.as_deref() == Some("failure") {
-                st.failures.push(run.clone());
+                out.failures.push(run.clone());
             }
+        }
+        out
+    });
+
+    for r in per_repo {
+        st.running += r.running;
+        st.queued += r.queued;
+        for f in &r.in_flight {
+            if let Some(e) = f.estimate {
+                st.in_flight_estimate += e;
+            }
+        }
+        st.in_flight.extend(r.in_flight);
+        st.failures.extend(r.failures);
+        if let Some(e) = r.error {
+            st.errors.push(e);
         }
     }
     Ok(st)
+}
+
+#[derive(Default)]
+struct RepoOutcome {
+    running: usize,
+    queued: usize,
+    in_flight: Vec<InFlight>,
+    failures: Vec<RunSummary>,
+    error: Option<String>,
+}
+
+/// Run `f` over `items` on a bounded set of threads, preserving order.
+/// Bounded because GitHub throttles bursts, and because the point is
+/// latency, not throughput.
+pub fn fan_out<T, R, F>(items: &[T], f: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync + Send,
+{
+    const MAX_CONCURRENCY: usize = 8;
+    if items.len() <= 1 {
+        return items.iter().map(&f).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let slots: Vec<std::sync::Mutex<Option<R>>> =
+        (0..items.len()).map(|_| std::sync::Mutex::new(None)).collect();
+    let threads = MAX_CONCURRENCY.min(items.len());
+
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if i >= items.len() {
+                    break;
+                }
+                let r = f(&items[i]);
+                *slots[i].lock().unwrap() = Some(r);
+            });
+        }
+    });
+
+    slots.into_iter().map(|s| s.into_inner().unwrap().unwrap()).collect()
 }

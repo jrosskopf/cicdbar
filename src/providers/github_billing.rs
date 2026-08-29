@@ -13,7 +13,7 @@ use crate::http::{ApiError, Http};
 use crate::money::Usd;
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageItem {
     pub date: String,
