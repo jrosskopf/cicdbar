@@ -1,0 +1,46 @@
+# Maintainer: Joachim Rosskopf <jr@data-zoo.de>
+pkgname=cicdbar
+pkgver=2026.8.29
+pkgrel=1
+pkgdesc="waybar widget for GitHub Actions + Blacksmith CI/CD spend and live job status"
+arch=('x86_64')
+url="https://github.com/jrosskopf/cicdbar"
+license=('MIT')
+depends=('gcc-libs')
+makedepends=('cargo')
+optdepends=('waybar: the status bar this is a module for'
+            'github-cli: supplies the GitHub token by default')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('824d71fa46d273619a5b69f4c6fc1e5ecf33ebe674846c9a1139f01904890a6b')
+
+prepare() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release --all-features
+}
+
+check() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    # Only the offline suites: the rest need live GitHub and Blacksmith
+    # credentials and are #[ignore]d. See docs/testing.md.
+    cargo test --frozen --release
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 config.example.toml "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
+    for d in docs/*.md; do
+        install -Dm644 "$d" "$pkgdir/usr/share/doc/$pkgname/$d"
+    done
+}

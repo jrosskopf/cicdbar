@@ -1,0 +1,15 @@
+pkgbase = cicdbar
+	pkgdesc = waybar widget for GitHub Actions + Blacksmith CI/CD spend and live job status
+	pkgver = 2026.8.29
+	pkgrel = 1
+	url = https://github.com/jrosskopf/cicdbar
+	arch = x86_64
+	license = MIT
+	makedepends = cargo
+	depends = gcc-libs
+	optdepends = waybar: the status bar this is a module for
+	optdepends = github-cli: supplies the GitHub token by default
+	source = cicdbar-2026.8.29.tar.gz::https://github.com/jrosskopf/cicdbar/archive/refs/tags/v2026.8.29.tar.gz
+	sha256sums = 824d71fa46d273619a5b69f4c6fc1e5ecf33ebe674846c9a1139f01904890a6b
+
+pkgname = cicdbar

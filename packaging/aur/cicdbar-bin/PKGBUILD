@@ -1,0 +1,27 @@
+# Maintainer: Joachim Rosskopf <jr@data-zoo.de>
+pkgname=cicdbar-bin
+_pkgname=cicdbar
+pkgver=2026.8.29
+pkgrel=1
+pkgdesc="waybar widget for GitHub Actions + Blacksmith CI/CD spend and live job status (prebuilt)"
+arch=('x86_64')
+url="https://github.com/jrosskopf/cicdbar"
+license=('MIT')
+depends=()
+optdepends=('waybar: the status bar this is a module for'
+            'github-cli: supplies the GitHub token by default')
+provides=("$_pkgname=$pkgver")
+conflicts=("$_pkgname")
+source=("$_pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$_pkgname-$pkgver-x86_64-unknown-linux-musl.tar.gz")
+sha256sums=('c2ee11c10af905eaeb000da13f15d33457383750d59083fe5b6f2470debc13ed')
+
+package() {
+    cd "$srcdir/$_pkgname-$pkgver-x86_64-unknown-linux-musl"
+    install -Dm755 "$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$_pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"
+    install -Dm644 config.example.toml "$pkgdir/usr/share/doc/$_pkgname/config.example.toml"
+    for d in docs/*.md; do
+        install -Dm644 "$d" "$pkgdir/usr/share/doc/$_pkgname/$d"
+    done
+}
