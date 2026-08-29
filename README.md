@@ -16,7 +16,7 @@ it:
 synthetic.)*
 
 [![CI](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml/badge.svg)](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml)
-[![crates.io](https://img.shields.io/crates/v/cicdbar.svg)](https://crates.io/crates/cicdbar)
+[![PyPI](https://img.shields.io/pypi/v/cicdbar.svg)](https://pypi.org/project/cicdbar/)
 [![licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 ## What it shows
