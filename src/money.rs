@@ -9,7 +9,7 @@ use std::ops::{Add, AddAssign, Mul, Sub};
 
 const MICROS: i64 = 1_000_000;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Usd(i64);
 
 impl Usd {
@@ -46,6 +46,10 @@ impl Usd {
         } else {
             Some(self.0 as f64 / budget.0 as f64 * 100.0)
         }
+    }
+
+    pub fn max(self, other: Usd) -> Usd {
+        if self.0 >= other.0 { self } else { other }
     }
 
     /// Short form for the collapsed bar, where width is scarce.
