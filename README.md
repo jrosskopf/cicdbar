@@ -4,12 +4,16 @@ A [waybar](https://github.com/Alexays/Waybar) widget showing **CI/CD dollar
 spend** — GitHub Actions and [Blacksmith](https://blacksmith.sh) — alongside
 **live job status**, with a detailed hover tooltip.
 
-```
-$235 · ✖ 3 · 64%
-```
+<img src="docs/img/bar.png" alt="the cicdbar waybar module" width="156">
 
 Total spend this billing cycle, a CI glyph with the running count, and
-projected month-end spend as a percentage of your budget.
+projected month-end spend as a percentage of your budget. Hovering expands
+it:
+
+<img src="docs/img/tooltip.png" alt="the cicdbar tooltip" width="394">
+
+*(Screenshots taken with `--demo`, so the figures and repository names are
+synthetic.)*
 
 [![CI](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml/badge.svg)](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/cicdbar.svg)](https://crates.io/crates/cicdbar)
