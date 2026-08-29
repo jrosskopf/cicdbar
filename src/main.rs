@@ -9,6 +9,7 @@ use cicdbar::config::Config;
 use cicdbar::cycle::Cycle;
 use cicdbar::http::Http;
 use cicdbar::money::Usd;
+use cicdbar::providers::blacksmith;
 use cicdbar::providers::github_billing::{self, Spend, UsageItem};
 use cicdbar::providers::github_runs::{self, CiStatus, RunnerKind};
 use cicdbar::render;
@@ -90,7 +91,7 @@ fn run(args: &Args) -> anyhow::Result<String> {
     let runs_ttl = if args.no_cache { 0 } else { cfg.cache.runs_ttl_secs };
 
     let mut oldest_stale: Option<(u64, String)> = None;
-    let mut note_stale = |f: &Freshness, oldest: &mut Option<(u64, String)>| {
+    let note_stale = |f: &Freshness, oldest: &mut Option<(u64, String)>| {
         if let Freshness::Stale { age_secs, reason } = f {
             let worse = oldest.as_ref().map(|(a, _)| age_secs > a).unwrap_or(true);
             if worse {
@@ -122,7 +123,7 @@ fn run(args: &Args) -> anyhow::Result<String> {
             Err(reason) => snap.notes.push(format!("{org}: {reason}")),
         }
     }
-    snap.per_org.sort_by(|a, b| b.1.cmp(&a.1));
+    snap.per_org.sort_by_key(|(_, amount)| std::cmp::Reverse(*amount));
     snap.github = merged;
 
     // ---- Runs, per org ---- (orgs fetched concurrently)
@@ -162,11 +163,53 @@ fn run(args: &Args) -> anyhow::Result<String> {
         .sort_by_key(|f| f.run.started_at.clone().unwrap_or_default());
 
     // ---- Blacksmith ----
-    // Until the dashboard API is wired up, month-to-date Blacksmith spend is
-    // derived from the jobs GitHub itself reports as running on their runners.
-    let bs = blacksmith_estimate(&snap);
-    snap.blacksmith_estimate = bs;
+    // Prefer the exact figure from the dashboard API; fall back to pricing the
+    // jobs GitHub reports on blacksmith-* runners. The fallback is always
+    // labelled, so a stale session never reads as "you spent nothing".
+    snap.blacksmith_estimate = blacksmith_estimate(&snap);
     snap.blacksmith_is_estimate = true;
+    if cfg.blacksmith.enabled {
+        let session = cfg
+            .blacksmith
+            .session_file
+            .clone()
+            .unwrap_or_else(Config::default_blacksmith_session);
+        let org = cfg
+            .blacksmith
+            .org
+            .clone()
+            .or_else(|| cfg.github.orgs.first().cloned())
+            .unwrap_or_default();
+        match blacksmith::Dashboard::from_cookie_file(&session) {
+            Ok(dash) => {
+                let key = format!("blacksmith-{org}");
+                match cache.get_or_refresh(&key, billing_ttl, || {
+                    dash.projected(&org).map(|p| p.amount).map_err(|e| e.to_string())
+                }) {
+                    Ok((amount, freshness)) => {
+                        note_stale(&freshness, &mut oldest_stale);
+                        snap.blacksmith = Some(amount);
+                        snap.blacksmith_is_estimate = false;
+                    }
+                    Err(e) => snap.notes.push(format!("blacksmith: {e}")),
+                }
+                if let Ok((usage, _)) = cache.get_or_refresh(
+                    &format!("blacksmith-live-{org}"),
+                    runs_ttl,
+                    || {
+                        dash.core_usage(&org)
+                            .map(|u| (u.total_jobs(), u.total_vcpus()))
+                            .map_err(|e| e.to_string())
+                    },
+                ) {
+                    if usage.0 > 0 || usage.1 > 0 {
+                        snap.bs_live = Some(usage);
+                    }
+                }
+            }
+            Err(e) => snap.notes.push(format!("blacksmith: {e}")),
+        }
+    }
 
     if let Some((age, reason)) = oldest_stale {
         snap.age_secs = age;

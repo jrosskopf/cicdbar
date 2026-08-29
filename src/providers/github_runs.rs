@@ -242,9 +242,12 @@ pub fn recent_runs(
     let r: RunsResponse = http.get_json(&format!(
         "/repos/{owner}/{repo}/actions/runs?per_page={per_page}"
     ))?;
-    Ok(r.workflow_runs
-        .into_iter()
-        .map(|run| {
+    Ok(r.workflow_runs.into_iter().map(|run| to_summary(run, owner, repo)).collect())
+}
+
+fn to_summary(run: ApiRun, owner: &str, repo: &str) -> RunSummary {
+    {
+        {
             let branch = run.head_branch.unwrap_or_default();
             let default_branch = run
                 .repository
@@ -268,8 +271,8 @@ pub fn recent_runs(
                 updated_at: run.updated_at,
                 url: run.html_url,
             }
-        })
-        .collect())
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -286,6 +289,31 @@ struct ApiJob {
     conclusion: Option<String>,
     started_at: Option<String>,
     completed_at: Option<String>,
+}
+
+/// Runs created within one calendar month, newest first.
+///
+/// The range must be bounded at BOTH ends: `created=>=2025-01-01` also matches
+/// every later month, which silently turned a historical query into a
+/// month-to-date one.
+pub fn runs_in_month(
+    http: &Http,
+    owner: &str,
+    repo: &str,
+    year: i16,
+    month: u8,
+    per_page: u32,
+) -> Result<Vec<RunSummary>, ApiError> {
+    let last = days_in_month(year, month);
+    let range = format!("{year:04}-{month:02}-01..{year:04}-{month:02}-{last:02}");
+    let r: RunsResponse = http.get_json(&format!(
+        "/repos/{owner}/{repo}/actions/runs?created={range}&per_page={per_page}"
+    ))?;
+    Ok(r.workflow_runs.into_iter().map(|run| to_summary(run, owner, repo)).collect())
+}
+
+fn days_in_month(year: i16, month: u8) -> u8 {
+    jiff::civil::date(year, month as i8, 1).days_in_month() as u8
 }
 
 pub fn jobs_for_run(
@@ -349,8 +377,7 @@ pub fn org_status(
 ) -> Result<CiStatus, ApiError> {
     let repos = active_repos(http, org, active_days, max_repos)?;
     let now = Timestamp::now();
-    let mut st = CiStatus::default();
-    st.repos_polled = repos.len();
+    let mut st = CiStatus { repos_polled: repos.len(), ..Default::default() };
 
     let per_repo: Vec<RepoOutcome> = fan_out(&repos, |repo| {
         let runs = match recent_runs(http, &repo.owner, &repo.name, 20) {

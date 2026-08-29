@@ -20,6 +20,9 @@ max_tooltip_runs = 8
 [blacksmith]
 enabled = true
 org = "DataZooDE"
+# Cookie pair captured from app.blacksmith.sh (they publish no billing API).
+# Rewritten automatically: the server rotates the session cookie each call.
+session_file = "~/.config/cicdbar/blacksmith-session"
 
 [cache]
 billing_ttl_secs = 900

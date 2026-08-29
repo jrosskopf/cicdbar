@@ -30,6 +30,8 @@ pub struct Snapshot {
     pub in_flight: Vec<InFlight>,
     pub in_flight_estimate: Usd,
     pub repos_polled: usize,
+    /// Blacksmith runner capacity in use right now, from their dashboard.
+    pub bs_live: Option<(i64, i64)>,
     pub notes: Vec<String>,
     pub stale_reason: Option<String>,
     pub age_secs: u64,
@@ -55,6 +57,7 @@ impl Snapshot {
             in_flight: Vec::new(),
             in_flight_estimate: Usd::zero(),
             repos_polled: 0,
+            bs_live: None,
             notes: Vec::new(),
             stale_reason: None,
             age_secs: 0,
@@ -104,6 +107,7 @@ impl Snapshot {
         s.budget = Usd::from_f64(400.0);
         s.running = 1;
         s.repos_polled = 6;
+        s.bs_live = Some((4, 16));
         let run = RunSummary {
             id: 1,
             repo: "demo-repo".into(),

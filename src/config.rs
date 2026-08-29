@@ -37,7 +37,10 @@ pub struct RunsConfig {
 pub struct BlacksmithConfig {
     pub enabled: bool,
     pub org: Option<String>,
-    pub token_source: Option<String>,
+    /// File holding the app.blacksmith.sh cookie pair. Blacksmith publishes
+    /// no billing API, so this is a captured dashboard session; the file is
+    /// rewritten on each call because the server rotates the session cookie.
+    pub session_file: Option<std::path::PathBuf>,
     pub api_base: Option<String>,
     /// Per-minute rates by runner label prefix, used for the computed
     /// estimate when the dashboard API is unavailable.
@@ -80,7 +83,7 @@ impl Default for BlacksmithConfig {
         BlacksmithConfig {
             enabled: false,
             org: None,
-            token_source: None,
+            session_file: None,
             api_base: None,
             rates: default_rates(),
         }
@@ -127,6 +130,11 @@ impl Config {
                 PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
             });
         base.join("cicdbar").join("config.toml")
+    }
+
+    /// Default location of the blacksmith session file.
+    pub fn default_blacksmith_session() -> PathBuf {
+        Self::default_path().with_file_name("blacksmith-session")
     }
 
     pub fn load(path: &Path) -> Result<Config> {

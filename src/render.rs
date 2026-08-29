@@ -224,13 +224,32 @@ pub fn tooltip(s: &Snapshot) -> String {
         span(FG_TEXT, &format!("  󰛨  {bs_label}")),
         bold(FG_TEXT, &s.blacksmith_usd().to_string())
     ));
+    if s.blacksmith_is_estimate {
+        t.push_str(&format!(
+            " {}\n",
+            span(FG_DIM, "     priced from blacksmith-* job minutes, not their invoice")
+        ));
+    }
+    if let Some((jobs, vcpus)) = s.bs_live {
+        t.push_str(&format!(
+            " {}\n",
+            span(
+                FG_DIM,
+                &format!(
+                    "     {jobs} job{} on {vcpus} vCPU{} right now",
+                    if jobs == 1 { "" } else { "s" },
+                    if vcpus == 1 { "" } else { "s" }
+                )
+            )
+        ));
+    }
 
     // Projection
     t.push_str(&format!("\n {}\n", rule()));
     let proj_line = match s.projected_pct() {
         Some(p) => format!(
             "  󰄉  Projected month-end {}  ({:.0}% of {})",
-            s.projected.to_string(),
+            s.projected,
             p,
             s.budget
         ),
