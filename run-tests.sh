@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 cargo build --release --tests
 
 offline=(money config_and_cycle render cache)
-live=(github_billing_live github_runs_live blacksmith_live performance_live)
+live=(github_billing_live github_runs_live blacksmith_live etag_live performance_live)
 
 fail=0
 for t in "${offline[@]}"; do
@@ -26,7 +26,12 @@ for t in "${live[@]}"; do
     [ "$first" -eq 1 ] || { echo "   (pausing to stay under GitHub's burst limit)"; sleep 25; }
     first=0
     printf '\n\033[1m== %s ==\033[0m\n' "$t"
-    cargo test --release --test "$t" -- --test-threads=2 || fail=1
+    # The performance suite measures wall-clock latency, so it runs alone.
+    if [ "$t" = performance_live ]; then
+        cargo test --release --test "$t" -- --test-threads=1 || fail=1
+    else
+        cargo test --release --test "$t" -- --test-threads=2 || fail=1
+    fi
 done
 
 if [ "$fail" -ne 0 ]; then

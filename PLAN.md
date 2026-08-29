@@ -339,5 +339,16 @@ rather than about the code: one assumed `erpl-proto` had no Blacksmith runners
 (it adopted them mid-August), and one compared two billing endpoints for exact
 equality while CI accrued spend between the two calls.
 
-Still open: extraction to its own repo with a PKGBUILD (§7 step 5), which waits
-until the widget has run for a while in anger.
+ETag conditional requests, specified in §4 and initially skipped, were added
+after the rate-limit incident made their value concrete: a steady-state tick
+now issues 22 requests of which 22 are 304s, and 304s do not count against the
+REST quota.
+
+Measured behaviour: 0 requests / 4 ms on a tick inside the cache TTL, 22
+requests / ~6 s when the runs cache has expired (nearly all 304s; the time is
+network round-trips, not quota), ~6 s fully cold against 17 s for the original
+serial version.
+
+Still open, and deliberately: extraction to its own repo with a PKGBUILD
+(§7 step 5), which the decision table defers until the widget has run for a
+while in anger.

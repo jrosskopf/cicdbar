@@ -60,6 +60,16 @@ impl ApiError {
 pub struct Http {
     client: reqwest::blocking::Client,
     base: String,
+    /// Where ETags and their response bodies are kept between execs.
+    etag_dir: Option<std::path::PathBuf>,
+    not_modified: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    requests: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct EtagEntry {
+    etag: String,
+    body: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -105,11 +115,75 @@ impl Http {
             .default_headers(headers)
             .timeout(Duration::from_secs(10))
             .build()?;
-        Ok(Http { client, base })
+        Ok(Http {
+            client,
+            base,
+            etag_dir: None,
+            not_modified: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            requests: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        })
+    }
+
+    /// Enable conditional requests. A 304 costs nothing against the REST rate
+    /// limit, which is the cheapest defence there is against the burst limit.
+    pub fn with_etag_store(mut self, dir: std::path::PathBuf) -> Http {
+        let _ = std::fs::create_dir_all(&dir);
+        self.etag_dir = Some(dir);
+        self
+    }
+
+    /// How many responses this client served from a 304 -- used by tests to
+    /// prove conditional requests are actually happening.
+    pub fn not_modified_count(&self) -> usize {
+        self.not_modified.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Total HTTP requests issued, 304s included. Counting inside the client
+    /// is the only trustworthy measure -- GitHub's own rate_limit counter is
+    /// eventually consistent and resets mid-measurement.
+    pub fn request_count(&self) -> usize {
+        self.requests.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn etag_path(&self, path: &str) -> Option<std::path::PathBuf> {
+        let dir = self.etag_dir.as_ref()?;
+        // A short stable digest keeps filenames sane for long query strings.
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in path.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        Some(dir.join(format!("{h:016x}.json")))
+    }
+
+    fn stored_etag(&self, path: &str) -> Option<EtagEntry> {
+        let p = self.etag_path(path)?;
+        let raw = std::fs::read_to_string(p).ok()?;
+        serde_json::from_str(&raw).ok()
+    }
+
+    fn store_etag(&self, path: &str, etag: &str, body: &str) {
+        let Some(p) = self.etag_path(path) else { return };
+        let entry = EtagEntry { etag: etag.to_string(), body: body.to_string() };
+        if let Ok(raw) = serde_json::to_string(&entry) {
+            let tmp = p.with_extension("json.tmp");
+            if std::fs::write(&tmp, raw).is_ok() {
+                let _ = std::fs::rename(&tmp, &p);
+            }
+        }
     }
 
     pub fn base(&self) -> &str {
         &self.base
+    }
+
+    /// Force a fresh request, bypassing any stored ETag. Used to recover
+    /// from a corrupted store entry.
+    fn get_unconditional<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, ApiError> {
+        if let Some(p) = self.etag_path(path) {
+            let _ = std::fs::remove_file(p);
+        }
+        self.get_json_once(path)
     }
 
     /// GET with retries for rate limiting.
@@ -140,11 +214,35 @@ impl Http {
 
     fn get_json_once<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, ApiError> {
         let url = format!("{}{}", self.base, path);
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .map_err(|e| ApiError::Transport(e.to_string()))?;
+        let cached = self.stored_etag(path);
+        let mut req = self.client.get(&url);
+        if let Some(c) = &cached {
+            req = req.header(reqwest::header::IF_NONE_MATCH, c.etag.clone());
+        }
+        self.requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let resp = req.send().map_err(|e| ApiError::Transport(e.to_string()))?;
+
+        if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+            // Unchanged upstream: replay what we stored. If that entry has
+            // been corrupted, fall through to an unconditional request rather
+            // than failing.
+            if let Some(c) = cached {
+                match serde_json::from_str(&c.body) {
+                    Ok(v) => {
+                        self.not_modified.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        return Ok(v);
+                    }
+                    Err(_) => return self.get_unconditional(path),
+                }
+            }
+            return self.get_unconditional(path);
+        }
+
+        let etag = resp
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
         let status = resp.status().as_u16();
         let retry_after = resp
             .headers()
@@ -156,7 +254,13 @@ impl Http {
             .map_err(|e| ApiError::Transport(e.to_string()))?;
 
         if (200..300).contains(&status) {
-            return serde_json::from_str(&body).map_err(|e| ApiError::Decode(e.to_string()));
+            let parsed: T =
+                serde_json::from_str(&body).map_err(|e| ApiError::Decode(e.to_string()))?;
+            // Only store once the body is known to parse.
+            if let Some(tag) = etag {
+                self.store_etag(path, &tag, &body);
+            }
+            return Ok(parsed);
         }
         let message = serde_json::from_str::<GhError>(&body)
             .ok()

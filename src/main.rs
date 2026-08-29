@@ -43,6 +43,10 @@ struct Args {
     /// Print the tooltip as plain text and exit (for eyeballing in a terminal).
     #[arg(long)]
     tooltip_only: bool,
+
+    /// Report HTTP requests issued and 304s served, to stderr.
+    #[arg(long)]
+    stats: bool,
 }
 
 fn main() {
@@ -85,8 +89,10 @@ fn run(args: &Args) -> anyhow::Result<String> {
     snap.budget = cfg.budget_usd;
 
     let token = cfg.github.token_source.resolve()?;
-    let http = Http::new(token)?;
     let cache = Cache::new(Cache::default_dir());
+    // Conditional requests: a 304 does not count against the REST rate limit,
+    // and most ticks find nothing changed.
+    let http = Http::new(token)?.with_etag_store(cache.dir().join("etags"));
     let billing_ttl = if args.no_cache { 0 } else { cfg.cache.billing_ttl_secs };
     let runs_ttl = if args.no_cache { 0 } else { cfg.cache.runs_ttl_secs };
 
@@ -216,6 +222,14 @@ fn run(args: &Args) -> anyhow::Result<String> {
         snap.stale_reason = Some(reason);
     }
     snap.recompute_projection();
+    if args.stats {
+        eprintln!(
+            "requests={} not_modified={} repos_polled={}",
+            http.request_count(),
+            http.not_modified_count(),
+            snap.repos_polled
+        );
+    }
     Ok(render::waybar_json(&snap, &args.format))
 }
 

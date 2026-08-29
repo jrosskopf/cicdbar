@@ -117,9 +117,19 @@ Money is integer micro-dollars throughout. The billing API quotes prices like
 `gross - discount = net` exactly; summing three f64 fields independently does
 not.
 
-Cold latency was 17s when every repo was polled serially, which would block
-waybar's tick. A bounded fan-out over orgs, repos and job lookups brought it
-to ~3.5s, held by a live performance test.
+Latency, measured against the real API with 15 repos in scope:
+
+| tick | requests | 304s | wall clock |
+|---|---|---|---|
+| cache warm (inside TTL) | 0 | – | 4 ms |
+| cache expired, ETags warm | 22 | 22 | ~6 s |
+| fully cold | 24 | 0 | ~6 s |
+
+Polling those repos serially took **17 s**; a bounded fan-out (6 concurrent,
+chosen to stay under GitHub's burst limit) brought it to ~6 s, and a live
+performance test guards against the regression. The remaining 6 s is network
+round-trips, not quota — nearly every request is a 304. Waybar spawns the
+module asynchronously, so this never freezes the bar.
 
 ## Rate limiting
 
