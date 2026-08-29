@@ -9,7 +9,18 @@ use std::ops::{Add, AddAssign, Mul, Sub};
 
 const MICROS: i64 = 1_000_000;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+    Debug,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct Usd(i64);
 
 impl Usd {
@@ -35,7 +46,11 @@ impl Usd {
 
     /// Cents, rounded half away from zero.
     fn cents(self) -> i64 {
-        let (sign, m) = if self.0 < 0 { (-1, -self.0) } else { (1, self.0) };
+        let (sign, m) = if self.0 < 0 {
+            (-1, -self.0)
+        } else {
+            (1, self.0)
+        };
         sign * ((m + 5_000) / 10_000)
     }
 
@@ -49,7 +64,11 @@ impl Usd {
     }
 
     pub fn max(self, other: Usd) -> Usd {
-        if self.0 >= other.0 { self } else { other }
+        if self.0 >= other.0 {
+            self
+        } else {
+            other
+        }
     }
 
     /// Short form for the collapsed bar, where width is scarce.

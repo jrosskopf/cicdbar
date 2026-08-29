@@ -39,6 +39,9 @@ fn compact_form_is_used_for_the_narrow_bar() {
 
 #[test]
 fn ratio_against_a_budget_survives_a_zero_budget() {
-    assert_eq!(Usd::from_f64(200.0).pct_of(Usd::from_f64(400.0)), Some(50.0));
+    assert_eq!(
+        Usd::from_f64(200.0).pct_of(Usd::from_f64(400.0)),
+        Some(50.0)
+    );
     assert_eq!(Usd::from_f64(200.0).pct_of(Usd::zero()), None);
 }

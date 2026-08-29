@@ -14,6 +14,7 @@ fn store_dir(name: &str) -> std::path::PathBuf {
 }
 
 #[test]
+#[ignore = "hits the live GitHub API; needs a gh token"]
 fn a_repeated_request_is_answered_304_by_the_real_api() {
     let http = Http::new(TokenSource::GhCli.resolve().expect("token"))
         .expect("client")
@@ -29,6 +30,7 @@ fn a_repeated_request_is_answered_304_by_the_real_api() {
 }
 
 #[test]
+#[ignore = "hits the live GitHub API; needs a gh token"]
 fn a_different_url_does_not_reuse_another_urls_etag() {
     let http = Http::new(TokenSource::GhCli.resolve().expect("token"))
         .expect("client")
@@ -40,6 +42,7 @@ fn a_different_url_does_not_reuse_another_urls_etag() {
 }
 
 #[test]
+#[ignore = "hits the live GitHub API; needs a gh token"]
 fn the_etag_store_survives_across_processes() {
     // waybar re-execs the binary; the store is only useful if it persists.
     let dir = store_dir("across");
@@ -54,10 +57,15 @@ fn the_etag_store_survives_across_processes() {
         .unwrap()
         .with_etag_store(dir);
     let _: serde_json::Value = http2.get_json(path).expect("reuse");
-    assert_eq!(http2.not_modified_count(), 1, "a fresh process must reuse the stored etag");
+    assert_eq!(
+        http2.not_modified_count(),
+        1,
+        "a fresh process must reuse the stored etag"
+    );
 }
 
 #[test]
+#[ignore = "hits the live GitHub API; needs a gh token"]
 fn a_corrupt_etag_entry_falls_back_to_a_normal_request() {
     let dir = store_dir("corrupt");
     let http = Http::new(TokenSource::GhCli.resolve().unwrap())

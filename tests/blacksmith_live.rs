@@ -13,18 +13,19 @@ fn http() -> Http {
 }
 
 #[test]
+#[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn finds_the_real_repo_using_blacksmith_runners() {
     // DataZooDE/datazoo-agent-template runs blacksmith-4vcpu-ubuntu-2404.
-    let usage = blacksmith::repo_month_usage(
-        &http(), "DataZooDE", "datazoo-agent-template", 2026, 8,
-    )
-    .expect("usage");
+    let usage =
+        blacksmith::repo_month_usage(&http(), "DataZooDE", "datazoo-agent-template", 2026, 8)
+            .expect("usage");
     assert!(usage.seconds > 0, "expected blacksmith minutes in August");
     assert!(usage.cost > Usd::zero());
     assert!(usage.by_runner.keys().any(|k| k.starts_with("blacksmith")));
 }
 
 #[test]
+#[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn a_month_before_blacksmith_was_adopted_costs_nothing() {
     // Which repos use Blacksmith changes over time (erpl-proto adopted it
     // during August 2026), so this pins a period instead of a repo.
@@ -35,6 +36,7 @@ fn a_month_before_blacksmith_was_adopted_costs_nothing() {
 }
 
 #[test]
+#[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn only_blacksmith_jobs_are_ever_priced() {
     // erpl-proto runs a mix of blacksmith, ubuntu-latest, windows and macos
     // jobs. Only the blacksmith ones may contribute.
@@ -51,7 +53,10 @@ fn only_blacksmith_jobs_are_ever_priced() {
 
 #[test]
 fn cost_is_minutes_times_the_published_rate() {
-    let kind = RunnerKind::Blacksmith { vcpu: 4, family: "ubuntu".into() };
+    let kind = RunnerKind::Blacksmith {
+        vcpu: 4,
+        family: "ubuntu".into(),
+    };
     assert_eq!(blacksmith::cost_for(&kind, 3600), Usd::from_f64(0.48));
 }
 
@@ -64,6 +69,7 @@ fn free_minutes_are_deducted_before_charging() {
 }
 
 #[test]
+#[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn discovers_blacksmith_repos_across_the_org_from_real_data() {
     let repos = blacksmith::discover_repos(&http(), "DataZooDE", 7, 4).expect("discover");
     assert!(
@@ -93,10 +99,14 @@ fn dirs_config() -> std::path::PathBuf {
 }
 
 #[test]
+#[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn reads_projected_spend_from_the_real_dashboard_api() {
     let file = cookie_file();
     if !file.exists() {
-        panic!("no blacksmith session at {}; capture one first", file.display());
+        panic!(
+            "no blacksmith session at {}; capture one first",
+            file.display()
+        );
     }
     let client = blacksmith::Dashboard::from_cookie_file(&file).expect("client");
     let p = client.projected("DataZooDE").expect("projected");
@@ -106,6 +116,7 @@ fn reads_projected_spend_from_the_real_dashboard_api() {
 }
 
 #[test]
+#[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn reads_live_runner_concurrency_from_the_real_dashboard_api() {
     let client = blacksmith::Dashboard::from_cookie_file(&cookie_file()).expect("client");
     let u = client.core_usage("DataZooDE").expect("core usage");
@@ -114,6 +125,7 @@ fn reads_live_runner_concurrency_from_the_real_dashboard_api() {
 }
 
 #[test]
+#[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn a_rotated_session_cookie_is_persisted_so_the_next_run_still_works() {
     // Laravel rotates blacksmith_session on every response. If we did not
     // write the new value back, the widget would authenticate exactly once.
@@ -122,19 +134,24 @@ fn a_rotated_session_cookie_is_persisted_so_the_next_run_still_works() {
     let client = blacksmith::Dashboard::from_cookie_file(&file).expect("client");
     client.projected("DataZooDE").expect("first call");
     let after = std::fs::read_to_string(&file).unwrap();
-    assert!(after.contains("blacksmith_session="), "session cookie retained");
+    assert!(
+        after.contains("blacksmith_session="),
+        "session cookie retained"
+    );
     assert_ne!(before, after, "rotated cookie must be written back");
 
     // And a second, independent client must still authenticate.
     let client2 = blacksmith::Dashboard::from_cookie_file(&file).expect("client2");
-    client2.projected("DataZooDE").expect("second call with the rolled cookie");
+    client2
+        .projected("DataZooDE")
+        .expect("second call with the rolled cookie");
 }
 
 #[test]
+#[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn an_expired_session_is_reported_as_such_not_as_zero_spend() {
-    let client = blacksmith::Dashboard::with_cookies(
-        "blacksmith_session=definitely-not-valid".into(),
-    );
+    let client =
+        blacksmith::Dashboard::with_cookies("blacksmith_session=definitely-not-valid".into());
     let err = client.projected("DataZooDE").unwrap_err();
     assert!(
         err.to_string().to_lowercase().contains("session"),
@@ -143,6 +160,7 @@ fn an_expired_session_is_reported_as_such_not_as_zero_spend() {
 }
 
 #[test]
+#[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn a_stale_session_cookie_is_recovered_via_the_durable_one() {
     // The server rotates blacksmith_session on every response, so a
     // concurrent caller can leave ours behind. That must self-heal against
@@ -153,11 +171,16 @@ fn a_stale_session_cookie_is_recovered_via_the_durable_one() {
         .map(|c| c.trim())
         .filter(|c| c.starts_with("remember_web"))
         .collect();
-    assert!(!durable.is_empty(), "session file must carry remember_web_*");
+    assert!(
+        !durable.is_empty(),
+        "session file must carry remember_web_*"
+    );
 
     let cookies = format!("{}; blacksmith_session=stale-and-wrong", durable.join("; "));
     let client = blacksmith::Dashboard::with_cookies(cookies);
-    let p = client.projected("DataZooDE").expect("must recover via remember_web");
+    let p = client
+        .projected("DataZooDE")
+        .expect("must recover via remember_web");
     assert!(p.amount >= Usd::zero());
 }
 

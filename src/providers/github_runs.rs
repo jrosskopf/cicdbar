@@ -38,13 +38,18 @@ impl RunSummary {
         matches!(self.status.as_str(), "in_progress")
     }
     pub fn is_queued(&self) -> bool {
-        matches!(self.status.as_str(), "queued" | "waiting" | "pending" | "requested")
+        matches!(
+            self.status.as_str(),
+            "queued" | "waiting" | "pending" | "requested"
+        )
     }
     pub fn started(&self) -> Option<Timestamp> {
         self.started_at.as_ref().and_then(|s| s.parse().ok())
     }
     pub fn elapsed_secs(&self, now: Timestamp) -> i64 {
-        self.started().map(|s| (now.as_second() - s.as_second()).max(0)).unwrap_or(0)
+        self.started()
+            .map(|s| (now.as_second() - s.as_second()).max(0))
+            .unwrap_or(0)
     }
     pub fn slug(&self) -> String {
         format!("{}/{}", self.owner, self.repo)
@@ -66,7 +71,10 @@ impl JobInfo {
         RunnerKind::from_labels(&self.labels)
     }
     pub fn elapsed_secs(&self, now: Timestamp) -> i64 {
-        let Some(start) = self.started_at.as_ref().and_then(|s| s.parse::<Timestamp>().ok())
+        let Some(start) = self
+            .started_at
+            .as_ref()
+            .and_then(|s| s.parse::<Timestamp>().ok())
         else {
             return 0;
         };
@@ -79,19 +87,35 @@ impl JobInfo {
     }
 }
 
-/// Blacksmith's published list price for the 2-vCPU tier, per minute.
-const BS_BASE_PER_MIN: [(&str, f64); 4] = [
-    ("ubuntu", 0.004),
-    ("arm", 0.0025),
-    ("windows", 0.008),
-    ("macos", 0.08),
-];
-const BS_BASE_VCPU: f64 = 2.0;
+/// Per-minute rates by runner family, at `BS_BASE_VCPU` vCPUs.
+///
+/// Defaults are Blacksmith's published list prices; `set_rate_table` replaces
+/// them from config, so someone on negotiated pricing gets their own numbers.
+/// Set once at startup before any pricing happens.
+static RATE_TABLE: std::sync::OnceLock<(std::collections::BTreeMap<String, f64>, f64)> =
+    std::sync::OnceLock::new();
+
+pub fn set_rate_table(rates: std::collections::BTreeMap<String, f64>, base_vcpu: f64) {
+    let _ = RATE_TABLE.set((rates, if base_vcpu > 0.0 { base_vcpu } else { 2.0 }));
+}
+
+fn rate_for(family: &str) -> (f64, f64) {
+    match RATE_TABLE.get() {
+        Some((rates, base)) => (rates.get(family).copied().unwrap_or(0.004), *base),
+        None => {
+            let d = crate::config::default_rates();
+            (d.get(family).copied().unwrap_or(0.004), 2.0)
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RunnerKind {
     /// A Blacksmith runner, e.g. `blacksmith-4vcpu-ubuntu-2404`.
-    Blacksmith { vcpu: u32, family: String },
+    Blacksmith {
+        vcpu: u32,
+        family: String,
+    },
     GitHubHosted,
     SelfHosted,
     Unknown,
@@ -119,7 +143,10 @@ impl RunnerKind {
                 } else {
                     "ubuntu"
                 };
-                return RunnerKind::Blacksmith { vcpu, family: family.to_string() };
+                return RunnerKind::Blacksmith {
+                    vcpu,
+                    family: family.to_string(),
+                };
             }
         }
         if labels.iter().any(|l| l.eq_ignore_ascii_case("self-hosted")) {
@@ -134,12 +161,8 @@ impl RunnerKind {
     pub fn rate_per_minute(&self) -> Option<f64> {
         match self {
             RunnerKind::Blacksmith { vcpu, family } => {
-                let base = BS_BASE_PER_MIN
-                    .iter()
-                    .find(|(f, _)| f == family)
-                    .map(|(_, r)| *r)
-                    .unwrap_or(0.004);
-                Some(base * (*vcpu as f64 / BS_BASE_VCPU))
+                let (base, base_vcpu) = rate_for(family);
+                Some(base * (*vcpu as f64 / base_vcpu))
             }
             _ => None,
         }
@@ -189,8 +212,12 @@ pub fn active_repos(
         if r.archived {
             continue;
         }
-        let Some(pushed) = r.pushed_at.clone() else { continue };
-        let Ok(ts) = pushed.parse::<Timestamp>() else { continue };
+        let Some(pushed) = r.pushed_at.clone() else {
+            continue;
+        };
+        let Ok(ts) = pushed.parse::<Timestamp>() else {
+            continue;
+        };
         if ts.as_second() < cutoff {
             continue;
         }
@@ -242,7 +269,10 @@ pub fn recent_runs(
     let r: RunsResponse = http.get_json(&format!(
         "/repos/{owner}/{repo}/actions/runs?per_page={per_page}"
     ))?;
-    Ok(r.workflow_runs.into_iter().map(|run| to_summary(run, owner, repo)).collect())
+    Ok(r.workflow_runs
+        .into_iter()
+        .map(|run| to_summary(run, owner, repo))
+        .collect())
 }
 
 fn to_summary(run: ApiRun, owner: &str, repo: &str) -> RunSummary {
@@ -256,7 +286,11 @@ fn to_summary(run: ApiRun, owner: &str, repo: &str) -> RunSummary {
                 .unwrap_or_else(|| "main".into());
             RunSummary {
                 id: run.id,
-                repo: run.repository.as_ref().map(|x| x.name.clone()).unwrap_or_else(|| repo.into()),
+                repo: run
+                    .repository
+                    .as_ref()
+                    .map(|x| x.name.clone())
+                    .unwrap_or_else(|| repo.into()),
                 owner: run
                     .repository
                     .as_ref()
@@ -309,7 +343,10 @@ pub fn runs_in_month(
     let r: RunsResponse = http.get_json(&format!(
         "/repos/{owner}/{repo}/actions/runs?created={range}&per_page={per_page}"
     ))?;
-    Ok(r.workflow_runs.into_iter().map(|run| to_summary(run, owner, repo)).collect())
+    Ok(r.workflow_runs
+        .into_iter()
+        .map(|run| to_summary(run, owner, repo))
+        .collect())
 }
 
 fn days_in_month(year: i16, month: u8) -> u8 {
@@ -322,8 +359,9 @@ pub fn jobs_for_run(
     repo: &str,
     run_id: u64,
 ) -> Result<Vec<JobInfo>, ApiError> {
-    let r: JobsResponse =
-        http.get_json(&format!("/repos/{owner}/{repo}/actions/runs/{run_id}/jobs?per_page=100"))?;
+    let r: JobsResponse = http.get_json(&format!(
+        "/repos/{owner}/{repo}/actions/runs/{run_id}/jobs?per_page=100"
+    ))?;
     Ok(r.jobs
         .into_iter()
         .map(|j| JobInfo {
@@ -377,7 +415,10 @@ pub fn org_status(
 ) -> Result<CiStatus, ApiError> {
     let repos = active_repos(http, org, active_days, max_repos)?;
     let now = Timestamp::now();
-    let mut st = CiStatus { repos_polled: repos.len(), ..Default::default() };
+    let mut st = CiStatus {
+        repos_polled: repos.len(),
+        ..Default::default()
+    };
 
     let per_repo: Vec<RepoOutcome> = fan_out(&repos, |repo| {
         let runs = match recent_runs(http, &repo.owner, &repo.name, 20) {
@@ -400,10 +441,16 @@ pub fn org_status(
                 .iter()
                 .find(|j| j.status == "in_progress")
                 .or_else(|| jobs.first());
-            let kind = running_job.map(|j| j.runner()).unwrap_or(RunnerKind::Unknown);
+            let kind = running_job
+                .map(|j| j.runner())
+                .unwrap_or(RunnerKind::Unknown);
             let secs: i64 = jobs.iter().map(|j| j.elapsed_secs(now)).sum();
             let estimate = estimated_cost(&kind, secs);
-            out.in_flight.push(InFlight { run: (*run).clone(), runner: kind, estimate });
+            out.in_flight.push(InFlight {
+                run: (*run).clone(),
+                runner: kind,
+                estimate,
+            });
         }
         out.running = in_progress.len();
         out.queued = runs.iter().filter(|r| r.is_queued()).count();
@@ -411,7 +458,10 @@ pub fn org_status(
         // A failure counts when it is the newest run of its workflow on the
         // default branch -- i.e. still broken, not merely broken once.
         let mut seen = std::collections::BTreeSet::new();
-        for run in runs.iter().filter(|r| r.is_default_branch && r.status == "completed") {
+        for run in runs
+            .iter()
+            .filter(|r| r.is_default_branch && r.status == "completed")
+        {
             if !seen.insert(run.workflow.clone()) {
                 continue;
             }
@@ -465,8 +515,9 @@ where
         return items.iter().map(&f).collect();
     }
     let next = std::sync::atomic::AtomicUsize::new(0);
-    let slots: Vec<std::sync::Mutex<Option<R>>> =
-        (0..items.len()).map(|_| std::sync::Mutex::new(None)).collect();
+    let slots: Vec<std::sync::Mutex<Option<R>>> = (0..items.len())
+        .map(|_| std::sync::Mutex::new(None))
+        .collect();
     let threads = MAX_CONCURRENCY.min(items.len());
 
     std::thread::scope(|scope| {
@@ -482,5 +533,8 @@ where
         }
     });
 
-    slots.into_iter().map(|s| s.into_inner().unwrap().unwrap()).collect()
+    slots
+        .into_iter()
+        .map(|s| s.into_inner().unwrap().unwrap())
+        .collect()
 }

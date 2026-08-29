@@ -3,19 +3,10 @@
 //! Colour follows the *projected* month-end spend against the budget, so a
 //! runaway shows on day 8 rather than at the invoice.
 
+use crate::config::Theme;
 use crate::cycle::{elapsed_short, human_duration};
 use crate::money::Usd;
 use crate::snapshot::Snapshot;
-
-// One Dark, matching the existing claudebar widget.
-const FG_DIM: &str = "#5c6370";
-const FG_TEXT: &str = "#abb2bf";
-const BLUE: &str = "#61afef";
-const GREEN: &str = "#98c379";
-const YELLOW: &str = "#e5c07b";
-const ORANGE: &str = "#d19a66";
-const RED: &str = "#e06c75";
-const TRACK: &str = "#3e4451";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -35,13 +26,13 @@ impl Severity {
             Severity::Critical => "critical",
         }
     }
-    pub fn colour(&self) -> &'static str {
+    pub fn colour<'a>(&self, theme: &'a Theme) -> &'a str {
         match self {
-            Severity::Unknown => FG_TEXT,
-            Severity::Ok => GREEN,
-            Severity::Low => YELLOW,
-            Severity::Warning => ORANGE,
-            Severity::Critical => RED,
+            Severity::Unknown => &theme.text,
+            Severity::Ok => &theme.ok,
+            Severity::Low => &theme.low,
+            Severity::Warning => &theme.warning,
+            Severity::Critical => &theme.critical,
         }
     }
 }
@@ -70,13 +61,13 @@ fn bold(colour: &str, body: &str) -> String {
 }
 
 /// A 20-cell progress bar, as claudebar draws.
-fn bar(fraction: f64, colour: &str) -> String {
+fn bar(fraction: f64, colour: &str, track: &str) -> String {
     const WIDTH: usize = 20;
     let filled = ((fraction.clamp(0.0, 1.0)) * WIDTH as f64).round() as usize;
     format!(
         "{}{}",
         span(colour, &"█".repeat(filled)),
-        span(TRACK, &"░".repeat(WIDTH - filled))
+        span(track, &"░".repeat(WIDTH - filled))
     )
 }
 
@@ -154,33 +145,40 @@ pub fn expand(fmt: &str, s: &Snapshot) -> anyhow::Result<String> {
     Ok(out)
 }
 
-fn rule() -> String {
-    span(FG_DIM, &"─".repeat(44))
+fn rule(theme: &Theme) -> String {
+    span(&theme.dim, &"─".repeat(44))
 }
 
 pub fn tooltip(s: &Snapshot) -> String {
+    let theme = &s.theme;
     let sev = s.severity();
     let mut t = String::new();
 
     t.push_str(&format!(
         " {}\n {}\n\n",
-        bold(BLUE, &format!("CI/CD spend — {}", escape(&s.cycle.label()))),
-        rule()
+        bold(
+            &theme.accent,
+            &format!("CI/CD spend — {}", escape(&s.cycle.label()))
+        ),
+        rule(theme)
     ));
 
     // GitHub
     t.push_str(&format!(
         " {}   {}\n",
-        span(FG_TEXT, "  󰊤  GitHub Actions"),
-        bold(FG_TEXT, &s.github.net.to_string())
+        span(&theme.text, "  󰊤  GitHub Actions"),
+        bold(&theme.text, &s.github.net.to_string())
     ));
     if let Some(f) = s.github.net.pct_of(s.budget) {
-        t.push_str(&format!("   {}\n", bar(f / 100.0, sev.colour())));
+        t.push_str(&format!(
+            "   {}\n",
+            bar(f / 100.0, sev.colour(theme), &theme.track)
+        ));
     }
     t.push_str(&format!(
         " {}\n",
         span(
-            FG_DIM,
+            &theme.dim,
             &format!(
                 "     net of {} gross ({} discounted)",
                 escape(&s.github.gross.to_string()),
@@ -191,7 +189,10 @@ pub fn tooltip(s: &Snapshot) -> String {
     for (org, amt) in s.per_org.iter().take(5) {
         t.push_str(&format!(
             " {}\n",
-            span(FG_DIM, &format!("     {}  {}", escape(org), escape(&amt.to_string())))
+            span(
+                &theme.dim,
+                &format!("     {}  {}", escape(org), escape(&amt.to_string()))
+            )
         ));
     }
     let skus: Vec<String> = s
@@ -205,7 +206,10 @@ pub fn tooltip(s: &Snapshot) -> String {
         })
         .collect();
     if !skus.is_empty() {
-        t.push_str(&format!(" {}\n", span(FG_DIM, &format!("     {}", skus.join(" · ")))));
+        t.push_str(&format!(
+            " {}\n",
+            span(&theme.dim, &format!("     {}", skus.join(" · ")))
+        ));
     }
     let repos: Vec<String> = s
         .github
@@ -214,27 +218,37 @@ pub fn tooltip(s: &Snapshot) -> String {
         .map(|(k, v)| format!("{} {}", escape(k), escape(&v.compact())))
         .collect();
     if !repos.is_empty() {
-        t.push_str(&format!(" {}\n", span(FG_DIM, &format!("     {}", repos.join(" · ")))));
+        t.push_str(&format!(
+            " {}\n",
+            span(&theme.dim, &format!("     {}", repos.join(" · ")))
+        ));
     }
 
     // Blacksmith
-    let bs_label = if s.blacksmith_is_estimate { "Blacksmith ~est" } else { "Blacksmith" };
+    let bs_label = if s.blacksmith_is_estimate {
+        "Blacksmith ~est"
+    } else {
+        "Blacksmith"
+    };
     t.push_str(&format!(
         "\n {}   {}\n",
-        span(FG_TEXT, &format!("  󰛨  {bs_label}")),
-        bold(FG_TEXT, &s.blacksmith_usd().to_string())
+        span(&theme.text, &format!("  󰛨  {bs_label}")),
+        bold(&theme.text, &s.blacksmith_usd().to_string())
     ));
     if s.blacksmith_is_estimate {
         t.push_str(&format!(
             " {}\n",
-            span(FG_DIM, "     priced from blacksmith-* job minutes, not their invoice")
+            span(
+                &theme.dim,
+                "     priced from blacksmith-* job minutes, not their invoice"
+            )
         ));
     }
     if let Some((jobs, vcpus)) = s.bs_live {
         t.push_str(&format!(
             " {}\n",
             span(
-                FG_DIM,
+                &theme.dim,
                 &format!(
                     "     {jobs} job{} on {vcpus} vCPU{} right now",
                     if jobs == 1 { "" } else { "s" },
@@ -245,28 +259,32 @@ pub fn tooltip(s: &Snapshot) -> String {
     }
 
     // Projection
-    t.push_str(&format!("\n {}\n", rule()));
+    t.push_str(&format!("\n {}\n", rule(theme)));
     let proj_line = match s.projected_pct() {
         Some(p) => format!(
             "  󰄉  Projected month-end {}  ({:.0}% of {})",
-            s.projected,
-            p,
-            s.budget
+            s.projected, p, s.budget
         ),
         None => format!("  󰄉  Projected month-end {}  (no budget set)", s.projected),
     };
-    t.push_str(&format!(" {}\n", bold(sev.colour(), &escape(&proj_line))));
     t.push_str(&format!(
         " {}\n",
-        span(FG_DIM, &format!("  󰥔  Cycle resets in {}", s.cycle.resets_in_human(s.now)))
+        bold(sev.colour(theme), &escape(&proj_line))
     ));
-
-    // CI status
-    t.push_str(&format!("\n {}\n", rule()));
     t.push_str(&format!(
         " {}\n",
         span(
-            FG_TEXT,
+            &theme.dim,
+            &format!("  󰥔  Cycle resets in {}", s.cycle.resets_in_human(s.now))
+        )
+    ));
+
+    // CI status
+    t.push_str(&format!("\n {}\n", rule(theme)));
+    t.push_str(&format!(
+        " {}\n",
+        span(
+            &theme.text,
             &format!(
                 "  󰑮  {} running · {} queued · {} failing   {}",
                 s.running,
@@ -290,11 +308,16 @@ pub fn tooltip(s: &Snapshot) -> String {
         t.push_str(&format!(
             " {}\n",
             span(
-                GREEN,
+                &theme.ok,
                 &escape(&format!(
                     "   ●  {}/{} · {} · {} · {} · {}{}",
-                    f.run.owner, f.run.repo, f.run.workflow, f.run.branch, elapsed,
-                    f.runner.short(), cost
+                    f.run.owner,
+                    f.run.repo,
+                    f.run.workflow,
+                    f.run.branch,
+                    elapsed,
+                    f.runner.short(),
+                    cost
                 ))
             )
         ));
@@ -303,7 +326,7 @@ pub fn tooltip(s: &Snapshot) -> String {
         t.push_str(&format!(
             " {}\n",
             span(
-                RED,
+                &theme.critical,
                 &escape(&format!(
                     "   ✖  {}/{} · {} · {}",
                     f.owner, f.repo, f.workflow, f.branch
@@ -314,16 +337,19 @@ pub fn tooltip(s: &Snapshot) -> String {
 
     // Notes and health
     if !s.notes.is_empty() || s.stale_reason.is_some() {
-        t.push_str(&format!("\n {}\n", rule()));
+        t.push_str(&format!("\n {}\n", rule(theme)));
     }
     for n in &s.notes {
-        t.push_str(&format!(" {}\n", span(ORANGE, &format!("  󰀪  {}", escape(n)))));
+        t.push_str(&format!(
+            " {}\n",
+            span(&theme.warning, &format!("  󰀪  {}", escape(n)))
+        ));
     }
     if let Some(r) = &s.stale_reason {
         t.push_str(&format!(
             " {}\n",
             span(
-                ORANGE,
+                &theme.warning,
                 &escape(&format!(
                     "  ⏸  Stale — {} ({} old)",
                     r,
@@ -344,12 +370,17 @@ struct WaybarOut {
 }
 
 pub fn waybar_json(s: &Snapshot, fmt: &str) -> String {
+    let theme = &s.theme;
     let sev = s.severity();
     let text = match expand(fmt, s) {
-        Ok(t) => span(sev.colour(), &escape(&t)),
-        Err(e) => span(RED, &escape(&format!("⚠ {e}"))),
+        Ok(t) => span(sev.colour(theme), &escape(&t)),
+        Err(e) => span(&theme.critical, &escape(&format!("⚠ {e}"))),
     };
-    let out = WaybarOut { text, tooltip: tooltip(s), class: sev.class().to_string() };
+    let out = WaybarOut {
+        text,
+        tooltip: tooltip(s),
+        class: sev.class().to_string(),
+    };
     serde_json::to_string(&out).unwrap_or_else(|_| {
         r#"{"text":"⚠","tooltip":"cicdbar: serialisation failed","class":"critical"}"#.into()
     })
@@ -357,9 +388,14 @@ pub fn waybar_json(s: &Snapshot, fmt: &str) -> String {
 
 /// Nothing worked at all. Waybar still gets a parseable line.
 pub fn failure_json(reason: &str) -> String {
+    let theme = Theme::default();
     let out = WaybarOut {
-        text: span(RED, "⚠"),
-        tooltip: format!(" {}\n {}", bold(RED, "cicdbar"), span(FG_TEXT, &escape(reason))),
+        text: span(&theme.critical, "⚠"),
+        tooltip: format!(
+            " {}\n {}",
+            bold(&theme.critical, "cicdbar"),
+            span(&theme.text, &escape(reason))
+        ),
         class: "critical".into(),
     };
     serde_json::to_string(&out)

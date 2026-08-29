@@ -1,29 +1,70 @@
-# cicdbar — CI/CD spend + job status widget
-# Monthly budget the projection is coloured against. Adjust to taste.
+# cicdbar — CI/CD spend + job status for waybar
+#
+# Copy to ~/.config/cicdbar/config.toml and edit. Every key below is
+# optional; the values shown are the defaults unless noted.
+
+# Monthly budget the projection is coloured against. With no budget set the
+# widget still shows spend, but cannot colour it — severity stays neutral.
 budget_usd = 400.0
 
 [github]
-# Only orgs whose billing you can actually read. Verified 2026-08-29:
-#   DataZooDE  ok
-#   anofox     ok (no spend)
-#   octoopt    403 "No access to billing usage data"
-#   sparrowbi  403
-#   zoitech-internal  404
-orgs = ["DataZooDE", "anofox"]
+# Organisations to aggregate. You need billing-read access to each: an org
+# where you lack it returns HTTP 403 ("No access to billing usage data") and
+# one that does not exist returns 404. Either way the widget keeps working
+# and notes the failure in the tooltip, so it is worth listing only orgs you
+# can actually read.
+orgs = ["your-org"]
+
+# Where the GitHub token comes from:
+#   "gh-cli"        read the gh CLI's own token (~/.config/gh/hosts.yml)
+#   "env:GH_TOKEN"  read an environment variable
+#   "<literal>"     the token itself (not recommended)
+# The token needs no billing scope: repo + read:org is enough for the usage
+# endpoint.
 token_source = "gh-cli"
 
 [runs]
+# Only poll repos pushed within this many days.
 active_days = 7
+# Hard cap on repos polled per tick — the main lever on API cost and latency.
 max_repos = 15
+# Longest list of in-flight runs shown in the tooltip.
 max_tooltip_runs = 8
 
 [blacksmith]
-enabled = true
-org = "DataZooDE"
-# Cookie pair captured from app.blacksmith.sh (they publish no billing API).
-# Rewritten automatically: the server rotates the session cookie each call.
-session_file = "~/.config/cicdbar/blacksmith-session"
+# Blacksmith publishes no billing API, so exact figures come from a captured
+# dashboard session. Without one, spend is estimated from blacksmith-* job
+# minutes and labelled "~est". Set false if you do not use Blacksmith.
+enabled = false
+org = "your-org"
+
+# Cookie pair captured from app.blacksmith.sh — see docs/blacksmith-api.md.
+# The file is rewritten on each call because the server rotates the session
+# cookie. Keep it mode 0600.
+# session_file = "~/.config/cicdbar/blacksmith-session"
+
+# Per-minute list price by runner family, at the base_vcpu tier below.
+# Override if you are on negotiated pricing. Published rates, 2026-08-29.
+[blacksmith.rates]
+ubuntu = 0.004
+arm = 0.0025
+windows = 0.008
+macos = 0.08
 
 [cache]
+# Billing moves slowly; run status does not.
 billing_ttl_secs = 900
 runs_ttl_secs = 45
+
+# Colours for the bar text and tooltip. Defaults are One Dark; override any
+# subset. `ok`/`low`/`warning`/`critical` track projected spend against
+# budget.
+[theme]
+ok = "#98c379"
+low = "#e5c07b"
+warning = "#d19a66"
+critical = "#e06c75"
+text = "#abb2bf"
+dim = "#5c6370"
+accent = "#61afef"
+track = "#3e4451"

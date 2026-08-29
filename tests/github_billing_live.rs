@@ -1,10 +1,10 @@
 //! Tests against the real GitHub billing API using the real gh CLI token.
 //! No mocks, no fixtures: if these pass, the widget's numbers are real.
 
+use cicdbar::http::Http;
 use cicdbar::money::Usd;
 use cicdbar::providers::github_billing;
 use cicdbar::token::TokenSource;
-use cicdbar::http::Http;
 
 fn http() -> Http {
     let token = TokenSource::GhCli.resolve().expect("gh cli token");
@@ -12,23 +12,34 @@ fn http() -> Http {
 }
 
 #[test]
+#[ignore = "hits the live GitHub billing API; needs a gh token and billing-read access"]
 fn reads_the_real_gh_cli_token() {
     let t = TokenSource::GhCli.resolve().expect("token");
-    assert!(t.starts_with("gho_") || t.starts_with("ghp_") || t.starts_with("github_pat_"),
-            "unexpected token shape");
+    assert!(
+        t.starts_with("gho_") || t.starts_with("ghp_") || t.starts_with("github_pat_"),
+        "unexpected token shape"
+    );
 }
 
 #[test]
+#[ignore = "hits the live GitHub billing API; needs a gh token and billing-read access"]
 fn fetches_current_month_usage_with_per_repo_granularity() {
     let usage = github_billing::fetch(&http(), "DataZooDE", 2026, 8).expect("fetch");
-    assert!(usage.len() > 500, "expected per-day detail rows, got {}", usage.len());
-    let repos: std::collections::BTreeSet<_> =
-        usage.iter().filter_map(|r| r.repository_name.as_deref()).collect();
+    assert!(
+        usage.len() > 500,
+        "expected per-day detail rows, got {}",
+        usage.len()
+    );
+    let repos: std::collections::BTreeSet<_> = usage
+        .iter()
+        .filter_map(|r| r.repository_name.as_deref())
+        .collect();
     assert!(repos.len() > 5, "expected many repos, got {:?}", repos);
     assert!(usage.iter().all(|r| r.product == "actions"));
 }
 
 #[test]
+#[ignore = "hits the live GitHub billing API; needs a gh token and billing-read access"]
 fn detail_rows_agree_with_the_monthly_rollup_on_compute_skus() {
     // The two endpoints agree on compute and disagree on storage, because
     // only the detail applies the included allowance. This is what justifies
@@ -71,29 +82,41 @@ fn detail_rows_agree_with_the_monthly_rollup_on_compute_skus() {
             .sum()
     };
     let gd = (gross(&detail).as_f64() - gross(&rollup).as_f64()).abs();
-    assert!(gd < 1.0, "storage gross must match; only the discount differs");
+    assert!(
+        gd < 1.0,
+        "storage gross must match; only the discount differs"
+    );
 }
 
 #[test]
+#[ignore = "hits the live GitHub billing API; needs a gh token and billing-read access"]
 fn an_org_without_billing_access_is_degraded_not_fatal() {
     // octoopt really does return 403 "No access to billing usage data."
     let err = github_billing::fetch(&http(), "octoopt", 2026, 8).unwrap_err();
-    assert!(err.is_access_denied(), "expected access-denied, got {err:?}");
+    assert!(
+        err.is_access_denied(),
+        "expected access-denied, got {err:?}"
+    );
 }
 
 #[test]
+#[ignore = "hits the live GitHub billing API; needs a gh token and billing-read access"]
 fn an_org_that_does_not_exist_is_degraded_not_fatal() {
     let err = github_billing::fetch(&http(), "zoitech-internal", 2026, 8).unwrap_err();
     assert!(err.is_not_found(), "expected not-found, got {err:?}");
 }
 
 #[test]
+#[ignore = "hits the live GitHub billing API; needs a gh token and billing-read access"]
 fn aggregates_real_usage_into_totals_and_breakdowns() {
     let usage = github_billing::fetch(&http(), "DataZooDE", 2026, 8).expect("fetch");
     let spend = github_billing::aggregate(&usage);
 
     assert!(spend.net > Usd::zero());
-    assert!(spend.gross > spend.net, "gross must exceed net given discounts");
+    assert!(
+        spend.gross > spend.net,
+        "gross must exceed net given discounts"
+    );
     assert_eq!(spend.gross - spend.discount, spend.net);
 
     // Breakdowns are ordered by spend, descending.

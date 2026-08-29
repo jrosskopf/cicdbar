@@ -1,4 +1,13 @@
-# Blacksmith dashboard API — captured 2026-08-29
+# The Blacksmith dashboard API
+
+> **Unofficial and unaffiliated.** This documents the private HTTP backend
+> behind `app.blacksmith.sh`, observed on **2026-08-29** by inspecting the
+> requests the dashboard makes in a normal browser session. It is not endorsed
+> by Blacksmith, carries no stability guarantee, and may change or disappear
+> without notice. It describes endpoints and response shapes only; it contains
+> no credentials, and every call listed is one your own dashboard already makes
+> on your behalf. Written because Blacksmith publishes no API documentation at
+> all and `cicdbar` needed something to build against.
 
 Blacksmith publishes **no billing API**. The only documented public endpoint
 is their Statuspage (`https://status.blacksmith.sh/v3/summary.json`), which
@@ -43,7 +52,9 @@ Two consequences, both learned the hard way:
    exactly once.** The value captured from a browser request goes stale as
    soon as the browser (or an earlier call of your own) makes another request.
 
-`cicdbar` therefore keeps a small cookie jar: it merges every `Set-Cookie`
+### The rotation problem
+
+`cicdbar` keeps a small cookie jar: it merges every `Set-Cookie`
 from the response and rewrites the session file (mode 0600) whenever a value
 changed. `tests/blacksmith_live.rs::a_rotated_session_cookie_is_persisted_so_the_next_run_still_works`
 pins exactly this — it asserts the file changed and that a second, independent
@@ -78,3 +89,59 @@ Labels observed in DataZooDE: `blacksmith-4vcpu-ubuntu-2404`.
 This is a floor, not an invoice — it cannot see sticky-disk, cache or static-IP
 charges — so it is always rendered as `Blacksmith ~est` with a line saying it
 was priced from job minutes.
+
+
+## Client checklist
+
+If you are writing your own client, these are the four things that will bite
+you, in the order they bit us:
+
+1. **Send both cookies.** `blacksmith_session` alone is a 401.
+2. **Persist `Set-Cookie` after every response.** Otherwise your second call
+   fails, and it will look like the API rejecting you rather than your client
+   discarding its own credential.
+3. **Re-authenticate with `remember_web_*` on a 401** before treating it as
+   fatal. A concurrent caller may have rotated the session out from under you;
+   the durable cookie recovers without a new login.
+4. **Handle `null` for object fields.** `current_usage` is `null` when nothing
+   is running — which is most of the time — and so is `charges` when there are
+   none. In serde terms `#[serde(default)]` is not enough; an explicit
+   `Option` unwrap is needed.
+
+## Response shapes
+
+```jsonc
+// GET /api/user/github/orgs/{org}/billing/projected
+{
+  "amount_cents": 140,                    // current period, in cents
+  "charges": {                            // may be null
+    "sticky_disk": {
+      "amount_cents": 3,
+      "units": 135478.125,
+      "gb_hours": 37.6328125
+    }
+  }
+}
+
+// GET /api/user/github/orgs/{org}/metrics/core-usage/current
+{
+  "current_usage": {                      // null when nothing is running
+    "amd64":  { "vcpus": 16, "jobs": 4, "held": 0 },
+    "arm64":  { "vcpus": 0,  "jobs": 0, "held": 0 },
+    "macos":  { "vcpus": 0,  "jobs": 0, "held": 0 }
+  },
+  "timestamp": "2026-08-29T06:35:57+00:00"
+}
+```
+
+Amounts are **cents**, not dollars. `cicdbar` converts on the way in
+(`usd_from_cents`) and keeps integer micro-dollars internally.
+
+## What this cannot tell you
+
+`billing/projected` is the charge for the current period as Blacksmith
+computes it, which is the number you want. The label-derived fallback in
+`providers/blacksmith.rs` is *not* equivalent: it prices job minutes at list
+rates and cannot see sticky-disk, cache or static-IP charges, nor any
+negotiated pricing. That is why it renders as `~est` with a line saying so,
+rather than being silently substituted.

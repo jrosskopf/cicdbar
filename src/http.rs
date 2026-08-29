@@ -16,7 +16,10 @@ pub enum ApiError {
     #[error("not found: {message}")]
     NotFound { message: String },
     #[error("rate limited: {message}")]
-    RateLimited { message: String, retry_after: Option<u64> },
+    RateLimited {
+        message: String,
+        retry_after: Option<u64>,
+    },
     #[error("http {status}: {message}")]
     Status { status: u16, message: String },
     #[error("transport: {0}")]
@@ -89,8 +92,14 @@ pub fn classify(status: u16, message: String) -> ApiError {
             || m.contains("try again later")
     };
     match status {
-        403 | 429 if looks_throttled => ApiError::RateLimited { message, retry_after: None },
-        429 => ApiError::RateLimited { message, retry_after: None },
+        403 | 429 if looks_throttled => ApiError::RateLimited {
+            message,
+            retry_after: None,
+        },
+        429 => ApiError::RateLimited {
+            message,
+            retry_after: None,
+        },
         403 => ApiError::AccessDenied { status, message },
         404 => ApiError::NotFound { message },
         _ => ApiError::Status { status, message },
@@ -109,7 +118,10 @@ impl Http {
             format!("Bearer {token}").parse()?,
         );
         headers.insert("X-GitHub-Api-Version", "2022-11-28".parse()?);
-        headers.insert(reqwest::header::ACCEPT, "application/vnd.github+json".parse()?);
+        headers.insert(
+            reqwest::header::ACCEPT,
+            "application/vnd.github+json".parse()?,
+        );
         let client = reqwest::blocking::Client::builder()
             .user_agent(concat!("cicdbar/", env!("CARGO_PKG_VERSION")))
             .default_headers(headers)
@@ -163,8 +175,13 @@ impl Http {
     }
 
     fn store_etag(&self, path: &str, etag: &str, body: &str) {
-        let Some(p) = self.etag_path(path) else { return };
-        let entry = EtagEntry { etag: etag.to_string(), body: body.to_string() };
+        let Some(p) = self.etag_path(path) else {
+            return;
+        };
+        let entry = EtagEntry {
+            etag: etag.to_string(),
+            body: body.to_string(),
+        };
         if let Ok(raw) = serde_json::to_string(&entry) {
             let tmp = p.with_extension("json.tmp");
             if std::fs::write(&tmp, raw).is_ok() {
@@ -219,7 +236,8 @@ impl Http {
         if let Some(c) = &cached {
             req = req.header(reqwest::header::IF_NONE_MATCH, c.etag.clone());
         }
-        self.requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.requests
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let resp = req.send().map_err(|e| ApiError::Transport(e.to_string()))?;
 
         if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
@@ -229,7 +247,8 @@ impl Http {
             if let Some(c) = cached {
                 match serde_json::from_str(&c.body) {
                     Ok(v) => {
-                        self.not_modified.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        self.not_modified
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         return Ok(v);
                     }
                     Err(_) => return self.get_unconditional(path),
@@ -267,7 +286,10 @@ impl Http {
             .and_then(|e| e.message)
             .unwrap_or_else(|| body.chars().take(160).collect());
         Err(match classify(status, message) {
-            ApiError::RateLimited { message, .. } => ApiError::RateLimited { message, retry_after },
+            ApiError::RateLimited { message, .. } => ApiError::RateLimited {
+                message,
+                retry_after,
+            },
             other => other,
         })
     }

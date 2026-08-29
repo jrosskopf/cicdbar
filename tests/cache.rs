@@ -26,7 +26,10 @@ fn a_fresh_entry_is_served_without_refetching() {
     assert!(matches!(f, Freshness::Fresh));
     let (v2, f2) = c.get_or_refresh("k", 900, fetch).unwrap();
     assert_eq!(v2, vec![1, 2, 3]);
-    assert!(matches!(f2, Freshness::Cached { .. }), "second call must hit the cache");
+    assert!(
+        matches!(f2, Freshness::Cached { .. }),
+        "second call must hit the cache"
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 1, "no second network call");
 }
 
@@ -50,11 +53,14 @@ fn an_expired_entry_is_refetched() {
 fn a_corrupt_cache_file_is_recovered_from() {
     let dir = cache_dir("corrupt");
     let c = Cache::new(dir.clone());
-    c.get_or_refresh("k", 900, || Ok::<_, String>(vec![7u32])).unwrap();
+    c.get_or_refresh("k", 900, || Ok::<_, String>(vec![7u32]))
+        .unwrap();
     // Something truncated the file mid-write.
     let path = c.path_for("k");
     std::fs::write(&path, "{not json").unwrap();
-    let (v, f) = c.get_or_refresh("k", 900, || Ok::<_, String>(vec![9u32])).unwrap();
+    let (v, f) = c
+        .get_or_refresh("k", 900, || Ok::<_, String>(vec![9u32]))
+        .unwrap();
     assert_eq!(v, vec![9]);
     assert!(matches!(f, Freshness::Fresh));
 }
@@ -63,7 +69,8 @@ fn a_corrupt_cache_file_is_recovered_from() {
 fn a_real_unreachable_api_serves_stale_data_and_marks_it() {
     let c = Cache::new(cache_dir("stale"));
     // Seed the cache with something good.
-    c.get_or_refresh("billing", 900, || Ok::<_, String>(vec![42u32])).unwrap();
+    c.get_or_refresh("billing", 900, || Ok::<_, String>(vec![42u32]))
+        .unwrap();
 
     // A real client against a real closed port on localhost.
     let dead = Http::with_base("token".into(), "http://127.0.0.1:1".into()).unwrap();

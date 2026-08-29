@@ -12,6 +12,7 @@ fn bin() -> &'static str {
 }
 
 #[test]
+#[ignore = "runs the real binary against the live GitHub API; needs a gh token"]
 fn a_cold_run_against_the_real_api_finishes_fast_enough_for_a_60s_tick() {
     let cache = std::env::temp_dir().join(format!("cicdbar-perf-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&cache);
@@ -25,8 +26,7 @@ fn a_cold_run_against_the_real_api_finishes_fast_enough_for_a_60s_tick() {
     let elapsed = t.elapsed();
 
     assert!(out.status.success());
-    let v: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("valid waybar json");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid waybar json");
     assert!(v["text"].as_str().unwrap().contains('$'));
     // Serial polling of 15 repos took 17s. Waybar spawns the module
     // asynchronously so the bar never freezes, but a tick must still finish
@@ -40,14 +40,21 @@ fn a_cold_run_against_the_real_api_finishes_fast_enough_for_a_60s_tick() {
 }
 
 #[test]
+#[ignore = "runs the real binary against the live GitHub API; needs a gh token"]
 fn a_warm_run_is_effectively_instant() {
     let cache = std::env::temp_dir().join(format!("cicdbar-perf-warm-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&cache);
     // Prime.
-    Command::new(bin()).env("XDG_CACHE_HOME", &cache).output().expect("prime");
+    Command::new(bin())
+        .env("XDG_CACHE_HOME", &cache)
+        .output()
+        .expect("prime");
 
     let t = Instant::now();
-    let out = Command::new(bin()).env("XDG_CACHE_HOME", &cache).output().expect("run");
+    let out = Command::new(bin())
+        .env("XDG_CACHE_HOME", &cache)
+        .output()
+        .expect("run");
     let elapsed = t.elapsed();
     assert!(out.status.success());
     assert!(
@@ -58,6 +65,7 @@ fn a_warm_run_is_effectively_instant() {
 }
 
 #[test]
+#[ignore = "runs the real binary against the live GitHub API; needs a gh token"]
 fn a_tick_stays_well_inside_the_rate_limit_budget() {
     // GitHub's own rate_limit counter is eventually consistent and resets
     // mid-measurement, so the request count is taken from inside the client.
@@ -81,7 +89,10 @@ fn a_tick_stays_well_inside_the_rate_limit_budget() {
     };
 
     let (cold, _) = stats(&[]);
-    assert!(cold < 60, "a cold tick issued {cold} requests; that is a burst-limit risk");
+    assert!(
+        cold < 60,
+        "a cold tick issued {cold} requests; that is a burst-limit risk"
+    );
 
     // A warm tick inside the cache TTL must touch the network at all.
     let (warm, _) = stats(&[]);

@@ -14,7 +14,10 @@ pub struct Cycle {
 impl Cycle {
     pub fn containing(now: Timestamp) -> Cycle {
         let d = now.to_zoned(jiff::tz::TimeZone::UTC).date();
-        Cycle { year: d.year(), month: d.month() }
+        Cycle {
+            year: d.year(),
+            month: d.month(),
+        }
     }
 
     pub fn start(&self) -> Timestamp {
@@ -25,8 +28,15 @@ impl Cycle {
     }
 
     pub fn end(&self) -> Timestamp {
-        let (y, m) = if self.month == 12 { (self.year + 1, 1) } else { (self.year, self.month + 1) };
-        date(y, m, 1).to_zoned(jiff::tz::TimeZone::UTC).unwrap().timestamp()
+        let (y, m) = if self.month == 12 {
+            (self.year + 1, 1)
+        } else {
+            (self.year, self.month + 1)
+        };
+        date(y, m, 1)
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .unwrap()
+            .timestamp()
     }
 
     pub fn days_in_month(&self) -> i64 {
@@ -39,8 +49,18 @@ impl Cycle {
 
     pub fn label(&self) -> String {
         const NAMES: [&str; 12] = [
-            "January", "February", "March", "April", "May", "June", "July",
-            "August", "September", "October", "November", "December",
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
         ];
         format!("{} {}", NAMES[(self.month - 1) as usize], self.year)
     }

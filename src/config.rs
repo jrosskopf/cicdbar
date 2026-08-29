@@ -14,6 +14,37 @@ pub struct Config {
     pub runs: RunsConfig,
     pub blacksmith: BlacksmithConfig,
     pub cache: CacheConfig,
+    pub theme: Theme,
+}
+
+/// Bar and tooltip colours. Defaults are One Dark, to sit alongside the
+/// palette most waybar setups already use; override any subset.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct Theme {
+    pub ok: String,
+    pub low: String,
+    pub warning: String,
+    pub critical: String,
+    pub text: String,
+    pub dim: String,
+    pub accent: String,
+    pub track: String,
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Theme {
+            ok: "#98c379".into(),
+            low: "#e5c07b".into(),
+            warning: "#d19a66".into(),
+            critical: "#e06c75".into(),
+            text: "#abb2bf".into(),
+            dim: "#5c6370".into(),
+            accent: "#61afef".into(),
+            track: "#3e4451".into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -42,9 +73,14 @@ pub struct BlacksmithConfig {
     /// rewritten on each call because the server rotates the session cookie.
     pub session_file: Option<std::path::PathBuf>,
     pub api_base: Option<String>,
-    /// Per-minute rates by runner label prefix, used for the computed
-    /// estimate when the dashboard API is unavailable.
+    /// Per-minute list price by runner family, at the `base_vcpu` tier, used
+    /// for the computed estimate when the dashboard API is unavailable.
+    /// Override these if you are on negotiated pricing.
     pub rates: std::collections::BTreeMap<String, f64>,
+    /// vCPU count the rates above are quoted for; cost scales linearly.
+    pub base_vcpu: f64,
+    /// Minutes included free each month.
+    pub free_minutes: i64,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -62,19 +98,27 @@ impl Default for Config {
             runs: RunsConfig::default(),
             blacksmith: BlacksmithConfig::default(),
             cache: CacheConfig::default(),
+            theme: Theme::default(),
         }
     }
 }
 
 impl Default for GitHubConfig {
     fn default() -> Self {
-        GitHubConfig { orgs: Vec::new(), token_source: TokenSource::GhCli }
+        GitHubConfig {
+            orgs: Vec::new(),
+            token_source: TokenSource::GhCli,
+        }
     }
 }
 
 impl Default for RunsConfig {
     fn default() -> Self {
-        RunsConfig { active_days: 7, max_repos: 40, max_tooltip_runs: 8 }
+        RunsConfig {
+            active_days: 7,
+            max_repos: 40,
+            max_tooltip_runs: 8,
+        }
     }
 }
 
@@ -86,24 +130,29 @@ impl Default for BlacksmithConfig {
             session_file: None,
             api_base: None,
             rates: default_rates(),
+            base_vcpu: 2.0,
+            free_minutes: 3_000,
         }
     }
 }
 
 impl Default for CacheConfig {
     fn default() -> Self {
-        CacheConfig { billing_ttl_secs: 900, runs_ttl_secs: 30 }
+        CacheConfig {
+            billing_ttl_secs: 900,
+            runs_ttl_secs: 30,
+        }
     }
 }
 
-/// Blacksmith's published per-minute list prices, keyed by the runner-label
-/// substring that identifies the family.
+/// Blacksmith's published per-minute list prices at the 2-vCPU tier, keyed by
+/// runner family. Observed on their pricing page, 2026-08-29.
 pub fn default_rates() -> std::collections::BTreeMap<String, f64> {
     [
-        ("blacksmith-arm", 0.0025),
-        ("blacksmith-windows", 0.008),
-        ("blacksmith-macos", 0.08),
-        ("blacksmith", 0.004),
+        ("ubuntu", 0.004),
+        ("arm", 0.0025),
+        ("windows", 0.008),
+        ("macos", 0.08),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -141,10 +190,10 @@ impl Config {
         if !path.exists() {
             return Ok(Config::default());
         }
-        let raw = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
-        let cfg: Config = toml::from_str(&raw)
-            .with_context(|| format!("parsing {}", path.display()))?;
+        let raw =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let cfg: Config =
+            toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
         Ok(cfg)
     }
 }

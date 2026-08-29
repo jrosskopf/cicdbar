@@ -1,14 +1,19 @@
 # cicdbar
 
-A waybar widget showing **CI/CD dollar spend** (GitHub Actions + Blacksmith)
-and **live job status**, with a detailed hover tooltip. Rust, built red/green
-TDD against real APIs — no mocks anywhere in the suite.
-
-
+A [waybar](https://github.com/Alexays/Waybar) widget showing **CI/CD dollar
+spend** — GitHub Actions and [Blacksmith](https://blacksmith.sh) — alongside
+**live job status**, with a detailed hover tooltip.
 
 ```
 $235 · ✖ 3 · 64%
 ```
+
+Total spend this billing cycle, a CI glyph with the running count, and
+projected month-end spend as a percentage of your budget.
+
+[![CI](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml/badge.svg)](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/cicdbar.svg)](https://crates.io/crates/cicdbar)
+[![licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 ## What it shows
 
@@ -46,9 +51,34 @@ far, so a runaway shows on day 8 rather than at the invoice.
 
 ## Install
 
+**Arch (AUR)**
+
+```sh
+paru -S cicdbar        # builds from source
+paru -S cicdbar-bin    # prebuilt static binary
+```
+
+**cargo**
+
+```sh
+cargo install cicdbar
+```
+
+**Prebuilt binary** — grab the static `x86_64` tarball from
+[Releases](https://github.com/jrosskopf/cicdbar/releases); it has no runtime
+dependencies.
+
+**From source**
+
 ```sh
 cargo build --release
 cp target/release/cicdbar ~/.local/bin/
+```
+
+Then configure:
+
+```sh
+mkdir -p ~/.config/cicdbar
 cp config.example.toml ~/.config/cicdbar/config.toml   # then edit
 ```
 
@@ -74,30 +104,30 @@ visible immediately.
 `--demo` renders fixed sample data offline; `--tooltip-only` prints the
 tooltip as plain text for eyeballing in a terminal.
 
+## Requirements
+
+* A GitHub token with `repo` and `read:org` — **no billing scope needed**. By
+  default it reads the `gh` CLI's own token, so if `gh auth status` works, so
+  does this.
+* Billing-read access to the orgs you list.
+* Blacksmith is optional; set `enabled = false` if you do not use it.
+
 ## How the numbers are obtained
 
-**GitHub** — `GET /organizations/{org}/settings/billing/usage?year=&month=`,
-authenticated with the existing `gh` CLI token (`repo` + `read:org` suffice;
-no billing scope needed). Two things worth knowing, both pinned by tests:
-
-* The `?year=&month=` filter is **mandatory** for per-repo detail. Unfiltered,
-  the endpoint collapses to a monthly rollup — 40 rows instead of 1,608 — with
-  one arbitrary representative repo per SKU.
-* The rollup and the detail **disagree on storage**: identical gross, but the
-  detail applies the included-storage allowance and the rollup does not
-  ($3.37 vs $58.78 for August 2026). They agree to the cent on every compute
-  SKU. cicdbar sources everything from the detail and raises a tooltip note
-  about the gap, so it can be reconciled against the invoice rather than
-  silently papered over.
+**GitHub** — `GET /organizations/{org}/settings/billing/usage?year=&month=`.
+Two things about that endpoint cost real time to discover: the filter is
+**mandatory** for per-repo detail, and the filtered and unfiltered calls
+**disagree on storage** by design. Both are written up in
+[`docs/github-billing.md`](docs/github-billing.md).
 
 **Blacksmith** — they publish no billing API, so this reads the undocumented
-`dashboardbackend.blacksmith.sh` backend behind their dashboard. See
-[`blacksmith-api-notes.md`](blacksmith-api-notes.md); the short version is
-that auth is a Laravel cookie pair whose session half rotates on every
-response, so the client keeps a jar and writes it back. If the session
-expires, the widget falls back to pricing `blacksmith-*` job minutes from
-GitHub's own job records at published list rates, labelled `~est` — it never
-reports `$0.00`, which would read as "you spent nothing".
+backend behind their dashboard, documented in
+[`docs/blacksmith-api.md`](docs/blacksmith-api.md). Auth is a Laravel cookie
+pair whose session half rotates on *every* response, so a naive client
+authenticates exactly once. If the session expires, the widget falls back to
+pricing `blacksmith-*` job minutes from GitHub's own job records at published
+list rates, labelled `~est` — it never reports `$0.00`, which would read as
+"you spent nothing".
 
 **Job status** — GitHub has no org-wide in-flight endpoint, so cicdbar
 discovers repos pushed within `active_days` and asks each one, bounded by
@@ -151,20 +181,26 @@ The test suite is what trips them, which is why it runs serially:
 
 ## Tests
 
+See [`docs/testing.md`](docs/testing.md) for the full story.
+
+```sh
+cargo test          # offline suites — no credentials needed
+./run-tests.sh      # everything, including the live suites
+```
+
 Every test talks to a real system: the live GitHub API with the real `gh`
 token, the live Blacksmith dashboard, the real filesystem, a real closed TCP
 port for the unreachable-API path, and the real compiled binary via
 `Command`. There are no mocks and no recorded fixtures.
 
-That has a cost — the suite is subject to the world changing underneath it —
-and it has repeatedly been worth it. Tests written against the real API caught
-that `created>=` had no upper bound, that the billing aggregate's
-`gross - discount = net` invariant drifted under f64 summation, that the
-dashboard sends `"current_usage": null` when idle, that a 403 can mean two
-different things, and that serial polling took 17s. None of those would have
-failed against a mock built from my own assumptions.
+That has a cost and it has been worth it: tests written against the real API
+caught five bugs that a mock built from my own assumptions would have
+confirmed rather than caught. They are listed in
+[`docs/testing.md`](docs/testing.md).
 
-Two tests had to be rewritten because they asserted facts about the world
-rather than about the code: one assumed a repo did not use Blacksmith runners
-(it adopted them mid-August), and one compared two billing endpoints for exact
-equality while CI was actively accruing spend between the two calls.
+Live tests are `#[ignore]`d, so a fresh clone runs 42 offline tests and
+passes without credentials.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).

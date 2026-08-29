@@ -77,14 +77,17 @@ fn the_tooltip_is_well_formed_pango_and_names_the_real_sections() {
     assert!(tip.contains(&s.cycle.label()));
     // Every span opened is closed.
     assert_eq!(tip.matches("<span").count(), tip.matches("</span>").count());
-    assert!(!tip.contains("&D"), "unescaped ampersand would break Pango");
+    assert!(
+        !tip.contains("R&D"),
+        "unescaped ampersand would break Pango"
+    );
 }
 
 #[test]
 fn the_tooltip_lists_in_flight_runs_with_elapsed_and_cost() {
     let s = snap();
     let tip = render::tooltip(&s);
-    assert!(tip.contains("demo-repo"));
+    assert!(tip.contains("widget-service"));
     assert!(tip.contains("blacksmith"), "runner kind is shown");
 }
 

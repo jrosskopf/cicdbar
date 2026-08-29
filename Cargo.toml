@@ -2,6 +2,17 @@
 name = "cicdbar"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
+description = "waybar widget showing GitHub Actions and Blacksmith CI/CD spend, plus live job status"
+authors = ["Joachim Rosskopf <jr@data-zoo.de>"]
+license = "MIT"
+repository = "https://github.com/jrosskopf/cicdbar"
+homepage = "https://github.com/jrosskopf/cicdbar"
+documentation = "https://github.com/jrosskopf/cicdbar#readme"
+readme = "README.md"
+keywords = ["waybar", "github-actions", "ci", "billing", "statusbar"]
+categories = ["command-line-utilities"]
+exclude = ["docs/*.png", "/.github"]
 
 [dependencies]
 anyhow = "1"

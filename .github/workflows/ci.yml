@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup target add x86_64-unknown-linux-musl
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+
+      - run: cargo clippy --all-targets -- -D warnings
+
+      - run: cargo build --release
+
+      # Releases ship a static musl binary, so a musl break must surface on
+      # the PR that causes it rather than at tag time.
+      - name: Build musl (release artefact target)
+        run: |
+          sudo apt-get update && sudo apt-get install -y musl-tools
+          cargo build --release --target x86_64-unknown-linux-musl
+
+      # The test suite talks to live APIs and needs credentials, so it does
+      # not run here -- see docs/testing.md. This only proves it compiles.
+      - run: cargo test --no-run --release

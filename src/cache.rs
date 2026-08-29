@@ -48,7 +48,10 @@ pub struct Cache {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 impl Cache {
@@ -69,7 +72,13 @@ impl Cache {
     pub fn path_for(&self, key: &str) -> PathBuf {
         let safe: String = key
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         self.dir.join(format!("{safe}.json"))
     }
@@ -84,8 +93,13 @@ impl Cache {
     }
 
     fn write<T: Serialize>(&self, key: &str, value: &T) {
-        let entry = Entry { written_at: now_secs(), value };
-        let Ok(raw) = serde_json::to_string(&entry) else { return };
+        let entry = Entry {
+            written_at: now_secs(),
+            value,
+        };
+        let Ok(raw) = serde_json::to_string(&entry) else {
+            return;
+        };
         let path = self.path_for(key);
         // Write-then-rename so a crash cannot leave a half-written file that
         // the next exec would have to recover from.
@@ -121,7 +135,10 @@ impl Cache {
             Err(e) => match self.read::<T>(key) {
                 Some((value, age)) => Ok((
                     value,
-                    Freshness::Stale { age_secs: age, reason: e.to_string() },
+                    Freshness::Stale {
+                        age_secs: age,
+                        reason: e.to_string(),
+                    },
                 )),
                 None => Err(e),
             },

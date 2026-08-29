@@ -73,7 +73,11 @@ fn strip_markup(s: &str) -> String {
             _ => {}
         }
     }
-    out.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'")
+    out.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
 }
 
 fn run(args: &Args) -> anyhow::Result<String> {
@@ -87,14 +91,24 @@ fn run(args: &Args) -> anyhow::Result<String> {
     let cycle = Cycle::containing(now);
     let mut snap = Snapshot::new(now);
     snap.budget = cfg.budget_usd;
+    snap.theme = cfg.theme.clone();
+    github_runs::set_rate_table(cfg.blacksmith.rates.clone(), cfg.blacksmith.base_vcpu);
 
     let token = cfg.github.token_source.resolve()?;
     let cache = Cache::new(Cache::default_dir());
     // Conditional requests: a 304 does not count against the REST rate limit,
     // and most ticks find nothing changed.
     let http = Http::new(token)?.with_etag_store(cache.dir().join("etags"));
-    let billing_ttl = if args.no_cache { 0 } else { cfg.cache.billing_ttl_secs };
-    let runs_ttl = if args.no_cache { 0 } else { cfg.cache.runs_ttl_secs };
+    let billing_ttl = if args.no_cache {
+        0
+    } else {
+        cfg.cache.billing_ttl_secs
+    };
+    let runs_ttl = if args.no_cache {
+        0
+    } else {
+        cfg.cache.runs_ttl_secs
+    };
 
     let mut oldest_stale: Option<(u64, String)> = None;
     let note_stale = |f: &Freshness, oldest: &mut Option<(u64, String)>| {
@@ -111,8 +125,7 @@ fn run(args: &Args) -> anyhow::Result<String> {
     let billing: Vec<_> = github_runs::fan_out(&cfg.github.orgs, |org| {
         let key = format!("billing-{org}-{}-{}", cycle.year, cycle.month);
         cache.get_or_refresh(&key, billing_ttl, || {
-            github_billing::fetch(&http, org, cycle.year, cycle.month as u8)
-                .map_err(|e| e.short())
+            github_billing::fetch(&http, org, cycle.year, cycle.month as u8).map_err(|e| e.short())
         })
     });
     for (org, fetched) in cfg.github.orgs.iter().zip(billing) {
@@ -129,7 +142,8 @@ fn run(args: &Args) -> anyhow::Result<String> {
             Err(reason) => snap.notes.push(format!("{org}: {reason}")),
         }
     }
-    snap.per_org.sort_by_key(|(_, amount)| std::cmp::Reverse(*amount));
+    snap.per_org
+        .sort_by_key(|(_, amount)| std::cmp::Reverse(*amount));
     snap.github = merged;
 
     // ---- Runs, per org ---- (orgs fetched concurrently)
@@ -190,7 +204,9 @@ fn run(args: &Args) -> anyhow::Result<String> {
             Ok(dash) => {
                 let key = format!("blacksmith-{org}");
                 match cache.get_or_refresh(&key, billing_ttl, || {
-                    dash.projected(&org).map(|p| p.amount).map_err(|e| e.to_string())
+                    dash.projected(&org)
+                        .map(|p| p.amount)
+                        .map_err(|e| e.to_string())
                 }) {
                     Ok((amount, freshness)) => {
                         note_stale(&freshness, &mut oldest_stale);
@@ -199,15 +215,13 @@ fn run(args: &Args) -> anyhow::Result<String> {
                     }
                     Err(e) => snap.notes.push(format!("blacksmith: {e}")),
                 }
-                if let Ok((usage, _)) = cache.get_or_refresh(
-                    &format!("blacksmith-live-{org}"),
-                    runs_ttl,
-                    || {
+                if let Ok((usage, _)) =
+                    cache.get_or_refresh(&format!("blacksmith-live-{org}"), runs_ttl, || {
                         dash.core_usage(&org)
                             .map(|u| (u.total_jobs(), u.total_vcpus()))
                             .map_err(|e| e.to_string())
-                    },
-                ) {
+                    })
+                {
                     if usage.0 > 0 || usage.1 > 0 {
                         snap.bs_live = Some(usage);
                     }

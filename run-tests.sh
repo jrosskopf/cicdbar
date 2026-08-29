@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Live tests are #[ignore]d so a bare `cargo test` on a fresh clone runs the
+# offline suites and passes without credentials. This script includes them.
+#
 # Every test in this suite talks to a real system -- the live GitHub API, the
 # live Blacksmith dashboard, the real filesystem, the real binary. Cargo runs
 # test *binaries* concurrently, which bursts enough requests at GitHub to trip
@@ -28,9 +31,9 @@ for t in "${live[@]}"; do
     printf '\n\033[1m== %s ==\033[0m\n' "$t"
     # The performance suite measures wall-clock latency, so it runs alone.
     if [ "$t" = performance_live ]; then
-        cargo test --release --test "$t" -- --test-threads=1 || fail=1
+        cargo test --release --test "$t" -- --include-ignored --test-threads=1 || fail=1
     else
-        cargo test --release --test "$t" -- --test-threads=2 || fail=1
+        cargo test --release --test "$t" -- --include-ignored --test-threads=2 || fail=1
     fi
 done
 

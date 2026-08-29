@@ -120,13 +120,7 @@ pub fn discover_repos(
 }
 
 /// Month-to-date estimate for an org, over the repos that use Blacksmith.
-pub fn org_month_estimate(
-    http: &Http,
-    org: &str,
-    repos: &[String],
-    year: i16,
-    month: u8,
-) -> Usage {
+pub fn org_month_estimate(http: &Http, org: &str, repos: &[String], year: i16, month: u8) -> Usage {
     let per_repo: Vec<Usage> = github_runs::fan_out(repos, |repo| {
         repo_month_usage(http, org, repo, year, month).unwrap_or_default()
     });
@@ -266,9 +260,8 @@ impl Dashboard {
     }
 
     pub fn from_cookie_file(path: &std::path::Path) -> anyhow::Result<Dashboard> {
-        let raw = std::fs::read_to_string(path).map_err(|e| {
-            anyhow::anyhow!("reading blacksmith session {}: {e}", path.display())
-        })?;
+        let raw = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("reading blacksmith session {}: {e}", path.display()))?;
         let mut d = Dashboard::with_cookies(raw.replace('\n', "; "));
         d.cookie_file = Some(path.to_path_buf());
         Ok(d)
@@ -297,8 +290,12 @@ impl Dashboard {
             let mut jar = self.cookies.lock().unwrap();
             for hv in resp.headers().get_all(reqwest::header::SET_COOKIE) {
                 let Ok(s) = hv.to_str() else { continue };
-                let Some(pair) = s.split(';').next() else { continue };
-                let Some((k, v)) = pair.split_once('=') else { continue };
+                let Some(pair) = s.split(';').next() else {
+                    continue;
+                };
+                let Some((k, v)) = pair.split_once('=') else {
+                    continue;
+                };
                 let (k, v) = (k.trim().to_string(), v.trim().to_string());
                 if jar.get(&k).map(|old| old != &v).unwrap_or(true) {
                     jar.insert(k, v);
@@ -309,7 +306,9 @@ impl Dashboard {
         if !changed {
             return;
         }
-        let Some(path) = &self.cookie_file else { return };
+        let Some(path) = &self.cookie_file else {
+            return;
+        };
         let body = self.cookie_header();
         // 0600: this is a live credential.
         let _ = std::fs::write(path, &body);
@@ -371,9 +370,8 @@ impl Dashboard {
         if !status.is_success() {
             anyhow::bail!("blacksmith dashboard HTTP {}", status.as_u16());
         }
-        serde_json::from_str(&body).map_err(|e| {
-            anyhow::anyhow!("blacksmith dashboard returned an unexpected shape: {e}")
-        })
+        serde_json::from_str(&body)
+            .map_err(|e| anyhow::anyhow!("blacksmith dashboard returned an unexpected shape: {e}"))
     }
 
     /// Month-to-date charge for the current billing period.
@@ -383,6 +381,8 @@ impl Dashboard {
 
     /// Runner capacity in use right now.
     pub fn core_usage(&self, org: &str) -> anyhow::Result<CoreUsage> {
-        self.get(&format!("/api/user/github/orgs/{org}/metrics/core-usage/current"))
+        self.get(&format!(
+            "/api/user/github/orgs/{org}/metrics/core-usage/current"
+        ))
     }
 }

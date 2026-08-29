@@ -17,7 +17,9 @@ fn tmpdir() -> std::path::PathBuf {
 fn loads_a_real_config_file() {
     let dir = tmpdir();
     let path = dir.join("config.toml");
-    std::fs::write(&path, r#"
+    std::fs::write(
+        &path,
+        r#"
 budget_usd = 400.0
 
 [github]
@@ -31,7 +33,9 @@ max_repos = 40
 [blacksmith]
 enabled = true
 org = "DataZooDE"
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     let cfg = Config::load(&path).expect("load");
     assert_eq!(cfg.budget_usd, Usd::from_f64(400.0));
@@ -56,7 +60,10 @@ fn an_unknown_key_is_rejected_loudly() {
     let dir = tmpdir();
     let path = dir.join("bad.toml");
     std::fs::write(&path, "budget_usd = 1.0\nbudgte_usd = 2.0\n").unwrap();
-    assert!(Config::load(&path).is_err(), "typos must not be silently ignored");
+    assert!(
+        Config::load(&path).is_err(),
+        "typos must not be silently ignored"
+    );
 }
 
 #[test]
@@ -94,7 +101,10 @@ fn projection_on_the_first_minute_does_not_explode() {
     let t: Timestamp = "2026-08-01T00:00:30Z".parse().unwrap();
     let proj = c.project(Usd::from_f64(5.0), t);
     assert!(proj.as_f64().is_finite());
-    assert!(proj >= Usd::from_f64(5.0), "projection must not be below actual spend");
+    assert!(
+        proj >= Usd::from_f64(5.0),
+        "projection must not be below actual spend"
+    );
 }
 
 #[test]
@@ -105,5 +115,62 @@ fn february_and_month_lengths_are_handled() {
     assert_eq!(c.days_in_month(), 28);
     let c = Cycle::containing("2026-12-31T23:00:00Z".parse().unwrap());
     assert_eq!(c.days_in_month(), 31);
-    assert_eq!(c.resets_in_human("2026-12-31T23:00:00Z".parse().unwrap()), "1h 0m");
+    assert_eq!(
+        c.resets_in_human("2026-12-31T23:00:00Z".parse().unwrap()),
+        "1h 0m"
+    );
+}
+
+#[test]
+fn the_theme_is_configurable_and_defaults_to_one_dark() {
+    let cfg = Config::load(&tmpdir().join("nope.toml")).expect("defaults");
+    assert_eq!(cfg.theme.ok, "#98c379", "One Dark green");
+    assert_eq!(cfg.theme.critical, "#e06c75");
+
+    let dir = tmpdir();
+    let path = dir.join("theme.toml");
+    std::fs::write(&path, "[theme]\nok = \"#00ff00\"\ncritical = \"#ff0000\"\n").unwrap();
+    let cfg = Config::load(&path).expect("load");
+    assert_eq!(cfg.theme.ok, "#00ff00");
+    assert_eq!(cfg.theme.critical, "#ff0000");
+    // Unspecified colours keep their defaults.
+    assert_eq!(cfg.theme.warning, "#d19a66");
+}
+
+#[test]
+fn blacksmith_rates_are_configurable_and_default_to_published_prices() {
+    let cfg = Config::load(&tmpdir().join("nope.toml")).expect("defaults");
+    assert_eq!(cfg.blacksmith.rates.get("ubuntu"), Some(&0.004));
+    assert_eq!(cfg.blacksmith.rates.get("macos"), Some(&0.08));
+    assert_eq!(cfg.blacksmith.base_vcpu, 2.0);
+
+    let dir = tmpdir();
+    let path = dir.join("rates.toml");
+    std::fs::write(&path, "[blacksmith.rates]\nubuntu = 0.003\n").unwrap();
+    let cfg = Config::load(&path).expect("load");
+    assert_eq!(
+        cfg.blacksmith.rates.get("ubuntu"),
+        Some(&0.003),
+        "a negotiated rate must override the list price"
+    );
+}
+
+#[test]
+fn the_example_config_in_the_repo_actually_parses() {
+    // A shipped example that does not load is worse than none.
+    let example = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config.example.toml");
+    let cfg = Config::load(&example).expect("config.example.toml must parse");
+    assert!(!cfg.github.orgs.is_empty());
+}
+
+#[test]
+fn the_example_config_names_no_real_private_org() {
+    let example = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config.example.toml");
+    let raw = std::fs::read_to_string(example).unwrap();
+    for private in ["DataZooDE", "anofox", "octoopt", "sparrowbi", "zoitech"] {
+        assert!(
+            !raw.contains(private),
+            "example config still names {private}"
+        );
+    }
 }

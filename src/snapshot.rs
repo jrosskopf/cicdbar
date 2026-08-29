@@ -1,9 +1,10 @@
 //! Everything the widget needs to draw itself, gathered from all providers.
 
+use crate::config::Theme;
 use crate::cycle::Cycle;
 use crate::money::Usd;
 use crate::providers::github_billing::Spend;
-use crate::providers::github_runs::{InFlight, RunnerKind, RunSummary};
+use crate::providers::github_runs::{InFlight, RunSummary, RunnerKind};
 use crate::render::Severity;
 use jiff::Timestamp;
 
@@ -35,6 +36,7 @@ pub struct Snapshot {
     pub notes: Vec<String>,
     pub stale_reason: Option<String>,
     pub age_secs: u64,
+    pub theme: Theme,
 }
 
 impl Snapshot {
@@ -61,6 +63,7 @@ impl Snapshot {
             notes: Vec::new(),
             stale_reason: None,
             age_secs: 0,
+            theme: Theme::default(),
         }
     }
 
@@ -99,19 +102,27 @@ impl Snapshot {
         s.github.net = Usd::from_f64(232.02);
         s.github.gross = Usd::from_f64(2746.06);
         s.github.discount = s.github.gross - s.github.net;
-        s.github.per_repo.insert("R&D-tools".into(), Usd::from_f64(120.0));
-        s.github.per_repo.insert("demo-repo".into(), Usd::from_f64(80.0));
-        s.github.per_sku.insert("Actions macOS 3-core".into(), Usd::from_f64(122.49));
-        s.github.per_sku.insert("Actions Linux".into(), Usd::from_f64(79.98));
-        s.per_org = vec![("DataZooDE".into(), Usd::from_f64(232.02))];
+        s.github
+            .per_repo
+            .insert("R&D-platform".into(), Usd::from_f64(120.0));
+        s.github
+            .per_repo
+            .insert("widget-service".into(), Usd::from_f64(80.0));
+        s.github
+            .per_sku
+            .insert("Actions macOS 3-core".into(), Usd::from_f64(122.49));
+        s.github
+            .per_sku
+            .insert("Actions Linux".into(), Usd::from_f64(79.98));
+        s.per_org = vec![("acme".into(), Usd::from_f64(232.02))];
         s.budget = Usd::from_f64(400.0);
         s.running = 1;
         s.repos_polled = 6;
         s.bs_live = Some((4, 16));
         let run = RunSummary {
             id: 1,
-            repo: "demo-repo".into(),
-            owner: "DataZooDE".into(),
+            repo: "widget-service".into(),
+            owner: "acme".into(),
             workflow: "CI".into(),
             branch: "main".into(),
             status: "in_progress".into(),
@@ -119,11 +130,14 @@ impl Snapshot {
             started_at: Some("2026-08-29T06:24:00Z".into()),
             updated_at: None,
             is_default_branch: true,
-            url: "https://github.com/DataZooDE/demo-repo/actions/runs/1".into(),
+            url: "https://github.com/acme/widget-service/actions/runs/1".into(),
         };
         s.in_flight = vec![InFlight {
             run,
-            runner: RunnerKind::Blacksmith { vcpu: 4, family: "ubuntu".into() },
+            runner: RunnerKind::Blacksmith {
+                vcpu: 4,
+                family: "ubuntu".into(),
+            },
             estimate: Some(Usd::from_f64(0.05)),
         }];
         s.in_flight_estimate = Usd::from_f64(0.05);

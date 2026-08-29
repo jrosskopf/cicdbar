@@ -55,8 +55,8 @@ fn gh_cli_token() -> Result<String> {
         }
     }
     let path = hosts_path();
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let raw =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let hosts: serde_yaml::Value = serde_yaml::from_str(&raw)?;
     let host = hosts
         .get("github.com")
