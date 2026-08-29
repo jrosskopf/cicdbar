@@ -457,7 +457,9 @@ where
     R: Send,
     F: Fn(&T) -> R + Sync + Send,
 {
-    const MAX_CONCURRENCY: usize = 8;
+    // GitHub enforces a secondary limit on burst concurrency, separate from
+    // the 5,000/hr quota. 8 tripped it; 4 keeps the cold path under 5s.
+    const MAX_CONCURRENCY: usize = 4;
     if items.len() <= 1 {
         return items.iter().map(&f).collect();
     }

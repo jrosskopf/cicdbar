@@ -11,9 +11,9 @@ fn http() -> Http {
 
 #[test]
 fn discovers_repos_pushed_within_the_window() {
-    let repos = github_runs::active_repos(&http(), "DataZooDE", 7, 100).expect("repos");
+    let repos = github_runs::active_repos(&http(), "DataZooDE", 7, 20).expect("repos");
     assert!(!repos.is_empty(), "DataZooDE has had pushes in the last week");
-    assert!(repos.len() < 100);
+    assert!(repos.len() <= 20);
     // Ordered most-recently-pushed first, so max_repos truncates the least
     // interesting repos rather than an arbitrary set.
     assert!(repos.windows(2).all(|w| w[0].pushed_at >= w[1].pushed_at));
@@ -27,13 +27,13 @@ fn respects_the_max_repos_cap() {
 
 #[test]
 fn a_zero_day_window_yields_nothing_rather_than_everything() {
-    let repos = github_runs::active_repos(&http(), "DataZooDE", 0, 100).expect("repos");
+    let repos = github_runs::active_repos(&http(), "DataZooDE", 0, 20).expect("repos");
     assert!(repos.is_empty());
 }
 
 #[test]
 fn reads_real_workflow_runs_for_an_active_repo() {
-    let runs = github_runs::recent_runs(&http(), "DataZooDE", "heron", 20).expect("runs");
+    let runs = github_runs::recent_runs(&http(), "DataZooDE", "heron", 5).expect("runs");
     assert!(!runs.is_empty());
     for r in &runs {
         assert!(!r.workflow.is_empty());
@@ -94,7 +94,7 @@ fn in_flight_cost_accrues_with_elapsed_minutes() {
 #[test]
 fn summarises_ci_status_across_the_org_from_real_data() {
     let h = http();
-    let status = github_runs::org_status(&h, "DataZooDE", 7, 6).expect("status");
+    let status = github_runs::org_status(&h, "DataZooDE", 7, 3).expect("status");
     // Whatever CI is doing right now, the invariants hold.
     assert!(status.running <= status.in_flight.len() + status.queued);
     for r in &status.in_flight {

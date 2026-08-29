@@ -65,7 +65,7 @@ fn free_minutes_are_deducted_before_charging() {
 
 #[test]
 fn discovers_blacksmith_repos_across_the_org_from_real_data() {
-    let repos = blacksmith::discover_repos(&http(), "DataZooDE", 7, 15).expect("discover");
+    let repos = blacksmith::discover_repos(&http(), "DataZooDE", 7, 4).expect("discover");
     assert!(
         repos.iter().any(|r| r == "datazoo-agent-template"),
         "expected the known blacksmith repo, got {repos:?}"
@@ -140,4 +140,39 @@ fn an_expired_session_is_reported_as_such_not_as_zero_spend() {
         err.to_string().to_lowercase().contains("session"),
         "expected a session error, got {err}"
     );
+}
+
+#[test]
+fn a_stale_session_cookie_is_recovered_via_the_durable_one() {
+    // The server rotates blacksmith_session on every response, so a
+    // concurrent caller can leave ours behind. That must self-heal against
+    // the real API rather than surfacing as an error.
+    let raw = std::fs::read_to_string(cookie_file()).unwrap();
+    let durable: Vec<&str> = raw
+        .split(';')
+        .map(|c| c.trim())
+        .filter(|c| c.starts_with("remember_web"))
+        .collect();
+    assert!(!durable.is_empty(), "session file must carry remember_web_*");
+
+    let cookies = format!("{}; blacksmith_session=stale-and-wrong", durable.join("; "));
+    let client = blacksmith::Dashboard::with_cookies(cookies);
+    let p = client.projected("DataZooDE").expect("must recover via remember_web");
+    assert!(p.amount >= Usd::zero());
+}
+
+#[test]
+fn an_idle_org_reporting_null_usage_is_not_an_error() {
+    // The dashboard sends {"current_usage":null,...} when nothing is running.
+    // That is the common case at night, and must not break the widget.
+    let parsed: blacksmith::CoreUsage =
+        serde_json::from_str(r#"{"current_usage":null,"timestamp":"2026-08-29T06:35:57+00:00"}"#)
+            .expect("null usage must parse");
+    assert_eq!(parsed.total_jobs(), 0);
+    assert_eq!(parsed.total_vcpus(), 0);
+    assert!(parsed.active().is_empty());
+
+    let p: blacksmith::Projected =
+        serde_json::from_str(r#"{"amount_cents":140,"charges":null}"#).expect("null charges");
+    assert_eq!(p.amount, Usd::from_f64(1.40));
 }

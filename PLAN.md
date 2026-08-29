@@ -1,5 +1,10 @@
 # cicdbar — implementation plan
 
+> **Status: implemented.** See [`README.md`](README.md) for the built widget
+> and [`blacksmith-api-notes.md`](blacksmith-api-notes.md) for the captured
+> Blacksmith API. What follows is the plan as agreed on 2026-08-29; the
+> section at the end records where reality differed.
+
 A waybar widget in Rust showing **CI/CD dollar spend** (GitHub Actions +
 Blacksmith) and **live job status**, with a detailed hover tooltip.
 Modelled on `claudebar` (`/usr/bin/claudebar`, pacman package
@@ -280,3 +285,59 @@ Not "tests pass" — the widget works on the real system:
 | Rate limits across 5 orgs | `active_days` + `max_repos` caps, ETags, split cache TTLs |
 | Blocking waybar on slow HTTP | Hard per-request timeout; on timeout serve cache and mark ⏸ |
 | Money drift from f64 | Integer micro-dollars throughout (test 1) |
+
+
+---
+
+## 9. Outcome — where the plan met reality
+
+Implemented in full, 58 tests, all against real systems. Four things differed
+from the plan:
+
+1. **The billing-granularity question (test 3) resolved in favour of detail.**
+   `?year=&month=` returns 1,608 rows across 43 repos at hourly resolution;
+   unfiltered collapses to 40 monthly rows with one arbitrary repo per SKU. The
+   per-repo tooltip is therefore buildable, but only via the filtered call.
+
+2. **A discrepancy the plan did not anticipate.** The rollup and the detail
+   disagree on Actions storage — identical gross, but the detail applies the
+   included allowance and the rollup does not ($3.37 vs $58.78 for August).
+   They agree to the cent on every compute SKU. cicdbar sources the detail and
+   raises a tooltip note, rather than silently picking a side.
+
+3. **Blacksmith auth was worse than "a token", and better than feared.** It is
+   a Laravel cookie *pair* whose session half rotates on every response — a
+   captured value authenticates exactly once. Solved with a persisted cookie
+   jar; because the cookies carry a rolling 14-day Max-Age, a widget polling
+   every 60s keeps itself logged in indefinitely. The computed estimate
+   survives as the labelled fallback, as planned.
+
+4. **Concurrency was not optional.** Polling repos serially took 17s, which
+   would block waybar's tick. A bounded fan-out over orgs, repos and job
+   lookups brought the cold path to ~3.5s, now held by a live performance test.
+
+5. **GitHub has a second, undocumented-in-passing rate limit.** A *secondary*
+   burst limit exists alongside the 5,000/hr quota — you can be throttled with
+   5,000 requests still showing as remaining — and it surfaces as a `403`
+   whose body is indistinguishable from a permissions `403` unless you read
+   the message. The widget was classifying it as "no billing access". A normal
+   tick (~20 requests, 4-way concurrency) stays clear of it; the *test suite*
+   was what tripped it, so the live suites are now paced apart by
+   `run-tests.sh`.
+
+Five real bugs were caught by tests rather than by inspection: `gross - discount
+= net` drifted by 2 micro-dollars when the three fields were summed
+independently (fixed by deriving discount), and `created>=` on the runs query
+had no upper bound, so a query for January 2025 silently matched every later
+month too. Beyond those: the Blacksmith dashboard sends `"current_usage": null`
+when idle (which `#[serde(default)]` does not cover), a rotated session cookie
+left behind by a concurrent caller needed re-authentication via the durable
+`remember_web` cookie, and the 403 misclassification above.
+
+Two tests had to be corrected because they asserted facts about the world
+rather than about the code: one assumed `erpl-proto` had no Blacksmith runners
+(it adopted them mid-August), and one compared two billing endpoints for exact
+equality while CI accrued spend between the two calls.
+
+Still open: extraction to its own repo with a PKGBUILD (§7 step 5), which waits
+until the widget has run for a while in anger.

@@ -1,0 +1,28 @@
+ CI/CD spend — August 2026
+ ────────────────────────────────────────────
+
+   󰊤  GitHub Actions   $232.99
+   ████████████░░░░░░░░
+      net of $2,750.28 gross ($2,517.28 discounted)
+      DataZooDE  $232.99
+      anofox  $0.00
+      macOS 3-core $123 · Linux $80.09 · Windows $25.46 · storage $3.37 · Linux ARM $0.84
+      heron $171 · anofox-context $20.58 · hetzner-agent-substrate $20.51 · datazoo-agent-template $12.00
+
+   󰛨  Blacksmith   $1.64
+
+ ────────────────────────────────────────────
+   󰄉  Projected month-end $257.14  (64% of $400.00)
+   󰥔  Cycle resets in 2d 17h
+
+ ────────────────────────────────────────────
+   󰑮  3 running · 0 queued · 3 failing   
+    ●  DataZooDE/anofox-tabfm · Main Extension Distribution Pipeline · feat/tabarena-frontrunners · 1h18m · github-hosted
+    ●  DataZooDE/anofox-tabfm · Main Extension Distribution Pipeline · feat/tabarena-frontrunners · 1h03m · github-hosted
+    ●  DataZooDE/anofox-tabfm · Main Extension Distribution Pipeline · feat/tabarena-frontrunners · 1h03m · github-hosted
+    ✖  DataZooDE/community-extensions · Community Extension Build · main
+    ✖  DataZooDE/escurel · live · main
+    ✖  DataZooDE/anofox-forecast · Main Extension Distribution Pipeline · main
+
+ ────────────────────────────────────────────
+   󰀪  DataZooDE: rollup bills storage at $58.78 vs $3.37 after allowance — reconcile with the invoice

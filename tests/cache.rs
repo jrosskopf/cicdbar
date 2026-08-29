@@ -116,3 +116,30 @@ fn entries_written_by_one_instance_are_read_by_the_next() {
     assert_eq!(v, vec![5]);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+// ---- 403 classification ----
+
+#[test]
+fn a_throttling_403_is_not_mistaken_for_a_permissions_403() {
+    use cicdbar::http::classify;
+    // GitHub returns 403 for both "you may not read this" and "you asked too
+    // fast". Confusing them makes the widget claim you lost billing access
+    // during a burst.
+    let throttled = classify(
+        403,
+        "API rate limit exceeded for user ID 851749. If you reach out to GitHub Support…".into(),
+    );
+    assert!(throttled.is_rate_limited(), "got {throttled:?}");
+    assert!(!throttled.is_access_denied());
+
+    let secondary = classify(403, "You have exceeded a secondary rate limit".into());
+    assert!(secondary.is_rate_limited());
+
+    let denied = classify(403, "No access to billing usage data.".into());
+    assert!(denied.is_access_denied(), "got {denied:?}");
+    assert!(!denied.is_rate_limited());
+    assert_eq!(denied.short(), "no billing access");
+
+    assert!(classify(404, "Not Found".into()).is_not_found());
+    assert!(classify(429, "too many requests".into()).is_rate_limited());
+}

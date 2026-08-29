@@ -178,7 +178,7 @@ pub struct Dashboard {
 pub struct Projected {
     #[serde(rename = "amount_cents", deserialize_with = "usd_from_cents")]
     pub amount: Usd,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub charges: BTreeMap<String, Charge>,
 }
 
@@ -198,8 +198,19 @@ fn usd_from_cents<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Usd, D::Erro
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct CoreUsage {
-    #[serde(default)]
+    /// The API sends an explicit `null` here when nothing is running, which
+    /// `#[serde(default)]` alone does not cover.
+    #[serde(default, deserialize_with = "null_as_default")]
     pub current_usage: BTreeMap<String, Arch>,
+}
+
+fn null_as_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de> + Default,
+{
+    use serde::Deserialize;
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -309,18 +320,48 @@ impl Dashboard {
         }
     }
 
-    fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> anyhow::Result<T> {
+    /// The durable half of the credential. `blacksmith_session` rotates and
+    /// can go stale (another process refreshed it, or it simply aged out);
+    /// `remember_web_*` is what re-establishes a session.
+    fn durable_cookies(&self) -> Option<String> {
+        let jar = self.cookies.lock().unwrap();
+        let kept: Vec<String> = jar
+            .iter()
+            .filter(|(k, _)| k.starts_with("remember_web"))
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        (!kept.is_empty()).then(|| kept.join("; "))
+    }
+
+    fn send(&self, path: &str, cookies: &str) -> anyhow::Result<(reqwest::StatusCode, String)> {
         let resp = self
             .client
             .get(format!("{}{}", self.base, path))
-            .header(reqwest::header::COOKIE, self.cookie_header())
+            .header(reqwest::header::COOKIE, cookies)
             .header(reqwest::header::ACCEPT, "application/json")
             .header(reqwest::header::ORIGIN, "https://app.blacksmith.sh")
             .header(reqwest::header::REFERER, "https://app.blacksmith.sh/")
             .send()?;
         self.absorb_cookies(&resp);
         let status = resp.status();
-        let body = resp.text()?;
+        Ok((status, resp.text()?))
+    }
+
+    fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> anyhow::Result<T> {
+        let (mut status, mut body) = self.send(path, &self.cookie_header())?;
+
+        // A stale session is expected, not exceptional: the server rotates the
+        // cookie on every response, so a concurrent caller (or a previous run
+        // whose write we missed) can leave ours behind. Re-authenticate with
+        // the durable cookie before giving up.
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            if let Some(durable) = self.durable_cookies() {
+                let (s2, b2) = self.send(path, &durable)?;
+                status = s2;
+                body = b2;
+            }
+        }
+
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             anyhow::bail!(
                 "blacksmith session expired or invalid (HTTP {}); re-capture it from app.blacksmith.sh",

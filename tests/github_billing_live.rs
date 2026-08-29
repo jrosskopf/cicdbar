@@ -30,20 +30,48 @@ fn fetches_current_month_usage_with_per_repo_granularity() {
 
 #[test]
 fn detail_rows_agree_with_the_monthly_rollup_on_compute_skus() {
-    // Established by probe: the two endpoints agree exactly on compute, and
-    // disagree on storage because only the detail applies the included
-    // allowance. If GitHub ever changes that, this test tells us.
+    // The two endpoints agree on compute and disagree on storage, because
+    // only the detail applies the included allowance. This is what justifies
+    // sourcing every figure from the detail; if GitHub changes it, we want to
+    // hear about it here.
+    //
+    // Note the two calls are not atomic: CI accrues spend between them, so
+    // compute is compared with a tolerance rather than for exact equality.
+    // The storage gap is ~$55 and structural, so it is asserted sharply.
     let h = http();
-    let detail = github_billing::fetch(&h, "DataZooDE", 2026, 8).expect("detail");
     let rollup = github_billing::fetch_rollup(&h, "DataZooDE").expect("rollup");
+    let detail = github_billing::fetch(&h, "DataZooDE", 2026, 8).expect("detail");
 
-    let compute = |rows: &[github_billing::UsageItem]| -> Usd {
+    let sum = |rows: &[github_billing::UsageItem], storage: bool| -> Usd {
         rows.iter()
-            .filter(|r| !r.sku.contains("storage") && r.date.starts_with("2026-08"))
+            .filter(|r| r.is_storage() == storage && r.date.starts_with("2026-08"))
             .map(|r| Usd::from_f64(r.net_amount))
             .sum()
     };
-    assert_eq!(compute(&detail), compute(&rollup));
+
+    let (d_compute, r_compute) = (sum(&detail, false), sum(&rollup, false));
+    let drift = (d_compute.as_f64() - r_compute.as_f64()).abs();
+    assert!(
+        drift < 10.0,
+        "compute should agree between endpoints; detail {d_compute} vs rollup {r_compute}"
+    );
+
+    let (d_storage, r_storage) = (sum(&detail, true), sum(&rollup, true));
+    assert!(
+        r_storage > d_storage + Usd::from_f64(10.0),
+        "rollup should report storage without the allowance the detail applies; \
+         detail {d_storage} vs rollup {r_storage}"
+    );
+
+    // Gross is the same on both sides -- the difference really is the discount.
+    let gross = |rows: &[github_billing::UsageItem]| -> Usd {
+        rows.iter()
+            .filter(|r| r.is_storage() && r.date.starts_with("2026-08"))
+            .map(|r| Usd::from_f64(r.gross_amount))
+            .sum()
+    };
+    let gd = (gross(&detail).as_f64() - gross(&rollup).as_f64()).abs();
+    assert!(gd < 1.0, "storage gross must match; only the discount differs");
 }
 
 #[test]
