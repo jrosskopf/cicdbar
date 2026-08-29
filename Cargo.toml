@@ -1,0 +1,29 @@
+[package]
+name = "cicdbar"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+jiff = "0.2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "gzip"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+toml = "0.8"
+
+[dev-dependencies]
+tiny_http = "0.12"
+
+[features]
+live = []
+
+[lib]
+name = "cicdbar"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cicdbar"
+path = "src/main.rs"
