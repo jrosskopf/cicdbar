@@ -201,6 +201,13 @@ confirmed rather than caught. They are listed in
 Live tests are `#[ignore]`d, so a fresh clone runs 42 offline tests and
 passes without credentials.
 
+## Versioning
+
+Calendar versioning: `YYYY.M.D`, tagged `vYYYY.M.D`. Month and day are not
+zero-padded — semver forbids leading zeros in numeric identifiers and Cargo
+enforces it, so `2026.08.29` is not a legal crate version. A later date is a
+later release; the numbers carry no other promise.
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).

@@ -33,3 +33,16 @@ offline suites cover it and are the gate that matters.
 New behaviour needs a test that exercises the real thing: a real file, a real
 socket, a real API. If you find yourself wanting a mock, that is usually a
 sign the seam is in the wrong place — open an issue and let us talk about it.
+
+## Versioning
+
+Calendar versioning: `YYYY.M.D`, tagged `vYYYY.M.D` — e.g. `v2026.8.29`.
+
+Note the month and day are **not zero-padded**. Semantic versioning forbids
+leading zeros in numeric identifiers, and Cargo enforces it (`2026.08.29` is
+rejected outright with "invalid leading zero in minor version number"), so the
+crate version could not carry them. The git tag matches the crate version
+exactly, and CI fails the release if they ever drift.
+
+There is no semantic promise in the numbers: a later date is a later release,
+nothing more. Breaking changes are called out in the release notes.
