@@ -145,6 +145,16 @@ impl Cache {
         }
     }
 
+    /// Read a value with no TTL semantics, for state we manage ourselves.
+    pub fn read_raw<T: DeserializeOwned>(&self, key: &str) -> Option<T> {
+        self.read::<T>(key).map(|(v, _)| v)
+    }
+
+    /// Write a value with no TTL semantics.
+    pub fn write_raw<T: Serialize>(&self, key: &str, value: &T) {
+        self.write(key, value);
+    }
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }

@@ -15,6 +15,42 @@ pub struct Config {
     pub blacksmith: BlacksmithConfig,
     pub cache: CacheConfig,
     pub theme: Theme,
+    pub notifications: NotificationConfig,
+}
+
+/// Desktop notifications when runs start and finish.
+///
+/// Defaults are loud on purpose (start + every finish). Across a busy org
+/// that is a few hundred a day; `on_start = false` and
+/// `on_finish = "failures"` cuts it to roughly one an hour.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct NotificationConfig {
+    pub enabled: bool,
+    pub on_start: bool,
+    /// "all" | "failures" | "failures-and-recoveries" | "none"
+    pub on_finish: String,
+    pub only_default_branch: bool,
+    /// Only runs triggered by this login; empty means anyone.
+    pub only_actor: String,
+    /// Repo names to notify about; empty means every watched repo.
+    pub repos: Vec<String>,
+    /// Above this many events in one tick, collapse to a single summary.
+    pub max_per_tick: usize,
+}
+
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        NotificationConfig {
+            enabled: true,
+            on_start: true,
+            on_finish: "all".into(),
+            only_default_branch: false,
+            only_actor: String::new(),
+            repos: Vec::new(),
+            max_per_tick: 8,
+        }
+    }
 }
 
 /// Bar and tooltip colours. Defaults are One Dark, to sit alongside the
@@ -99,6 +135,7 @@ impl Default for Config {
             blacksmith: BlacksmithConfig::default(),
             cache: CacheConfig::default(),
             theme: Theme::default(),
+            notifications: NotificationConfig::default(),
         }
     }
 }

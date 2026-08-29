@@ -9,11 +9,13 @@ use cicdbar::config::Config;
 use cicdbar::cycle::Cycle;
 use cicdbar::http::Http;
 use cicdbar::money::Usd;
+use cicdbar::notify::{Notifier, Urgency};
 use cicdbar::providers::blacksmith;
 use cicdbar::providers::github_billing::{self, Spend};
 use cicdbar::providers::github_runs::{self, CiStatus, RunnerKind};
 use cicdbar::render;
 use cicdbar::snapshot::Snapshot;
+use cicdbar::transitions::{self, NotifyState};
 use clap::Parser;
 use jiff::Timestamp;
 
@@ -47,6 +49,10 @@ struct Args {
     /// Report HTTP requests issued and 304s served, to stderr.
     #[arg(long)]
     stats: bool,
+
+    /// Never send desktop notifications on this run.
+    #[arg(long)]
+    no_notify: bool,
 }
 
 fn main() {
@@ -155,6 +161,7 @@ fn run(args: &Args) -> anyhow::Result<String> {
 
     // ---- Runs, per org ---- (orgs fetched concurrently)
     let mut ci = CiStatus::default();
+    let mut runs_were_stale = false;
     let statuses: Vec<_> = github_runs::fan_out(&cfg.github.orgs, |org| {
         let key = format!("runs-{org}");
         cache.get_or_refresh(&key, runs_ttl, || {
@@ -165,7 +172,11 @@ fn run(args: &Args) -> anyhow::Result<String> {
     for (org, fetched) in cfg.github.orgs.iter().zip(statuses) {
         match fetched {
             Ok((st, freshness)) => {
+                if freshness.is_stale() {
+                    runs_were_stale = true;
+                }
                 note_stale(&freshness, &mut oldest_stale);
+                ci.all_runs.extend(st.all_runs);
                 ci.running += st.running;
                 ci.queued += st.queued;
                 ci.repos_polled += st.repos_polled;
@@ -242,6 +253,15 @@ fn run(args: &Args) -> anyhow::Result<String> {
         snap.age_secs = age;
         snap.stale_reason = Some(reason);
     }
+    // ---- Notifications ----
+    // Only when the run data is genuinely fresh: a stale cache would replay
+    // transitions that did not happen.
+    if cfg.notifications.enabled && !args.no_notify && !runs_were_stale {
+        if let Err(e) = announce(&cfg, &cache, &ci.all_runs) {
+            snap.notes.push(format!("notifications: {e}"));
+        }
+    }
+
     snap.recompute_projection();
     if args.stats {
         eprintln!(
@@ -252,6 +272,87 @@ fn run(args: &Args) -> anyhow::Result<String> {
         );
     }
     Ok(render::waybar_json(&snap, &args.format))
+}
+
+/// Diff this tick's runs against the last, and notify about what changed.
+///
+/// State lives in the cache because the binary is re-exec'd every 60s. The
+/// first ever run seeds silently -- announcing every in-flight run on first
+/// launch would be noise.
+fn announce(
+    cfg: &Config,
+    cache: &Cache,
+    runs: &[cicdbar::providers::github_runs::RunSummary],
+) -> anyhow::Result<()> {
+    const KEY: &str = "notify-state";
+
+    let previous: NotifyState = cache.read_raw(KEY).unwrap_or_default();
+    let (events, next) = transitions::diff(&previous, runs);
+    // Persist before notifying: a crash mid-send must not replay the whole
+    // batch on the next tick.
+    cache.write_raw(KEY, &next);
+
+    // Which workflows were failing before, so a success can count as a
+    // recovery under "failures-and-recoveries".
+    let was_failing = |run: &cicdbar::providers::github_runs::RunSummary| -> bool {
+        previous
+            .runs
+            .values()
+            .any(|s| s.conclusion.as_deref() == Some("failure"))
+            && run.conclusion.as_deref() == Some("success")
+    };
+
+    let selected: Vec<_> = events
+        .into_iter()
+        .filter(|e| transitions::should_notify(&cfg.notifications, e, was_failing(e.run())))
+        .collect();
+    if selected.is_empty() {
+        return Ok(());
+    }
+
+    let notifier = Notifier::connect()?;
+
+    // A single push fans out to many workflows at once, so a tick can carry
+    // a dozen events. Past the cap, one line beats twelve.
+    if selected.len() > cfg.notifications.max_per_tick {
+        let failures = selected.iter().filter(|e| e.is_failure()).count();
+        let summary = format!("{} CI events", selected.len());
+        let body = if failures > 0 {
+            format!("{failures} failed")
+        } else {
+            "none failed".to_string()
+        };
+        let urgency = if failures > 0 {
+            Urgency::Critical
+        } else {
+            Urgency::Normal
+        };
+        notifier.send(None, &summary, &body, urgency, "cicdbar-summary")?;
+        return Ok(());
+    }
+
+    let mut state = next;
+    for event in &selected {
+        let (summary, body, urgency) = transitions::render(event);
+        let replaces = match event {
+            transitions::Event::Finished {
+                previous_notif_id, ..
+            } => *previous_notif_id,
+            transitions::Event::Started(_) => None,
+        };
+        match notifier.send(replaces, &summary, &body, urgency, "cicdbar") {
+            Ok(id) if id > 0 => {
+                // Remember it so the finish can replace the start in place.
+                if let Some(seen) = state.runs.get_mut(&event.run().id) {
+                    seen.notif_id = Some(id);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    cache.write_raw(KEY, &state);
+    Ok(())
 }
 
 /// Sum the Blacksmith minutes GitHub reports for this month's jobs.

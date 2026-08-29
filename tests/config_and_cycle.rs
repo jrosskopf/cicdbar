@@ -174,3 +174,29 @@ fn the_example_config_names_no_real_private_org() {
         );
     }
 }
+
+#[test]
+fn notification_defaults_are_loud_but_configurable() {
+    let cfg = Config::load(&tmpdir().join("nope.toml")).expect("defaults");
+    assert!(cfg.notifications.enabled);
+    assert!(
+        cfg.notifications.on_start,
+        "start notifications on by default"
+    );
+    assert_eq!(cfg.notifications.on_finish, "all");
+    assert_eq!(cfg.notifications.max_per_tick, 8);
+
+    let dir = tmpdir();
+    let path = dir.join("quiet.toml");
+    std::fs::write(
+        &path,
+        "[notifications]\non_start = false\non_finish = \"failures\"\n",
+    )
+    .unwrap();
+    let cfg = Config::load(&path).expect("load");
+    assert!(!cfg.notifications.on_start);
+    assert_eq!(cfg.notifications.on_finish, "failures");
+    // Untouched keys keep their defaults.
+    assert_eq!(cfg.notifications.max_per_tick, 8);
+    assert!(cfg.notifications.enabled);
+}

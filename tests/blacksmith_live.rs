@@ -71,11 +71,23 @@ fn free_minutes_are_deducted_before_charging() {
 #[test]
 #[ignore = "hits the live GitHub and Blacksmith APIs; needs a gh token and a captured Blacksmith session"]
 fn discovers_blacksmith_repos_across_the_org_from_real_data() {
-    let repos = blacksmith::discover_repos(&http(), "DataZooDE", 7, 4).expect("discover");
-    assert!(
-        repos.iter().any(|r| r == "datazoo-agent-template"),
-        "expected the known blacksmith repo, got {repos:?}"
-    );
+    // Asserts the property, not which repos happen to be top of the
+    // recently-pushed list: that ordering changes by the hour, and an
+    // earlier version of this test pinned a repo that simply moved down.
+    let h = http();
+    let repos = blacksmith::discover_repos(&h, "DataZooDE", 7, 8).expect("discover");
+    assert!(!repos.is_empty(), "this org does use blacksmith runners somewhere");
+
+    // Everything returned must genuinely have blacksmith-priced minutes.
+    for repo in &repos {
+        let usage = blacksmith::repo_month_usage(&h, "DataZooDE", repo, 2026, 8)
+            .unwrap_or_else(|e| panic!("usage for {repo}: {e:?}"));
+        assert!(
+            usage.by_runner.keys().all(|k| k.starts_with("blacksmith")),
+            "{repo} was reported as a blacksmith repo but priced {:?}",
+            usage.by_runner
+        );
+    }
 }
 
 #[test]

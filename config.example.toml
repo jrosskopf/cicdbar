@@ -68,3 +68,20 @@ text = "#abb2bf"
 dim = "#5c6370"
 accent = "#61afef"
 track = "#3e4451"
+
+# Desktop notifications when runs start and finish, over D-Bus.
+#
+# The defaults are loud: with ~170 runs a day across a busy org, start +
+# every finish is a few hundred notifications a day. To cut that to roughly
+# one an hour, set on_start = false and on_finish = "failures".
+[notifications]
+enabled = true
+on_start = true
+# "all" | "failures" | "failures-and-recoveries" | "none"
+on_finish = "all"
+only_default_branch = false
+only_actor = ""        # e.g. "your-login"; empty means anyone
+repos = []             # empty means every watched repo
+# Above this many events in one tick, collapse to a single summary. A push
+# fans out to many workflows at once, so bursts are the normal case.
+max_per_tick = 8

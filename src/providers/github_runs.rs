@@ -271,18 +271,49 @@ pub fn recent_runs(
     ))?;
     Ok(r.workflow_runs
         .into_iter()
-        .map(|run| to_summary(run, owner, repo))
+        .map(|run| to_summary(run, owner, repo, None))
         .collect())
 }
 
-fn to_summary(run: ApiRun, owner: &str, repo: &str) -> RunSummary {
+/// As `recent_runs`, but told the repo's real default branch.
+///
+/// The runs API sends `repository.default_branch` as **null**, so anything
+/// derived from the run payload alone silently assumes "main". Repos on
+/// "master" then never register a default-branch run, and their broken
+/// pipelines never surface.
+pub fn recent_runs_for(
+    http: &Http,
+    repo: &RepoRef,
+    per_page: u32,
+) -> Result<Vec<RunSummary>, ApiError> {
+    let r: RunsResponse = http.get_json(&format!(
+        "/repos/{}/{}/actions/runs?per_page={per_page}",
+        repo.owner, repo.name
+    ))?;
+    Ok(r.workflow_runs
+        .into_iter()
+        .map(|run| to_summary(run, &repo.owner, &repo.name, Some(&repo.default_branch)))
+        .collect())
+}
+
+fn to_summary(
+    run: ApiRun,
+    owner: &str,
+    repo: &str,
+    known_default_branch: Option<&str>,
+) -> RunSummary {
     {
         {
             let branch = run.head_branch.unwrap_or_default();
-            let default_branch = run
-                .repository
-                .as_ref()
-                .and_then(|x| x.default_branch.clone())
+            // Prefer the caller's knowledge: the run payload's
+            // repository.default_branch is null in practice.
+            let default_branch = known_default_branch
+                .map(str::to_string)
+                .or_else(|| {
+                    run.repository
+                        .as_ref()
+                        .and_then(|x| x.default_branch.clone())
+                })
                 .unwrap_or_else(|| "main".into());
             RunSummary {
                 id: run.id,
@@ -345,7 +376,7 @@ pub fn runs_in_month(
     ))?;
     Ok(r.workflow_runs
         .into_iter()
-        .map(|run| to_summary(run, owner, repo))
+        .map(|run| to_summary(run, owner, repo, None))
         .collect())
 }
 
@@ -385,6 +416,10 @@ pub struct CiStatus {
     /// Estimated cost of Blacksmith work currently in flight.
     pub in_flight_estimate: Usd,
     pub errors: Vec<String>,
+    /// Every run seen this tick, which is what start/finish notifications
+    /// diff against. Bounded by max_repos x per_page.
+    #[serde(default)]
+    pub all_runs: Vec<RunSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -421,7 +456,7 @@ pub fn org_status(
     };
 
     let per_repo: Vec<RepoOutcome> = fan_out(&repos, |repo| {
-        let runs = match recent_runs(http, &repo.owner, &repo.name, 20) {
+        let runs = match recent_runs_for(http, repo, 20) {
             Ok(r) => r,
             Err(e) => {
                 return RepoOutcome {
@@ -454,6 +489,7 @@ pub fn org_status(
         }
         out.running = in_progress.len();
         out.queued = runs.iter().filter(|r| r.is_queued()).count();
+        out.all_runs = runs.clone();
 
         // A failure counts when it is the newest run of its workflow on the
         // default branch -- i.e. still broken, not merely broken once.
@@ -482,6 +518,7 @@ pub fn org_status(
         }
         st.in_flight.extend(r.in_flight);
         st.failures.extend(r.failures);
+        st.all_runs.extend(r.all_runs);
         if let Some(e) = r.error {
             st.errors.push(e);
         }
@@ -495,6 +532,7 @@ struct RepoOutcome {
     queued: usize,
     in_flight: Vec<InFlight>,
     failures: Vec<RunSummary>,
+    all_runs: Vec<RunSummary>,
     error: Option<String>,
 }
 

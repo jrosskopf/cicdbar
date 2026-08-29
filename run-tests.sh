@@ -12,8 +12,8 @@ cd "$(dirname "$0")"
 
 cargo build --release --tests
 
-offline=(money config_and_cycle render cache)
-live=(github_billing_live github_runs_live blacksmith_live etag_live performance_live)
+offline=(money config_and_cycle render cache transitions)
+live=(github_billing_live github_runs_live blacksmith_live etag_live notify_live performance_live)
 
 fail=0
 for t in "${offline[@]}"; do
@@ -30,7 +30,9 @@ for t in "${live[@]}"; do
     first=0
     printf '\n\033[1m== %s ==\033[0m\n' "$t"
     # The performance suite measures wall-clock latency, so it runs alone.
-    if [ "$t" = performance_live ]; then
+    # notify_live shares one global resource -- the notification daemon --
+    # so concurrent tests dismiss each other's notifications.
+    if [ "$t" = performance_live ] || [ "$t" = notify_live ]; then
         cargo test --release --test "$t" -- --include-ignored --test-threads=1 || fail=1
     else
         cargo test --release --test "$t" -- --include-ignored --test-threads=2 || fail=1

@@ -167,6 +167,32 @@ performance test guards against the regression. The remaining 6 s is network
 round-trips, not quota — nearly every request is a 304. Waybar spawns the
 module asynchronously, so this never freezes the bar.
 
+## Notifications
+
+cicdbar can raise a desktop notification (D-Bus,
+`org.freedesktop.Notifications`) when a run starts and when it finishes. A
+run occupies **one** notification for its whole life: the "started" one is
+replaced in place by its result rather than stacking a second.
+
+Failures are sent at critical urgency, so daemons that honour it keep them
+until dismissed.
+
+**The defaults are loud on purpose** — start plus every finish. Across a busy
+org that is a few hundred a day. Two lines make it about one an hour:
+
+```toml
+[notifications]
+on_start = false
+on_finish = "failures"
+```
+
+`--no-notify` suppresses them for a single invocation.
+
+> **mako users:** cicdbar deliberately sends no `x-dunst-stack-tag` hint.
+> mako 1.11.0 **crashes** when a notification carrying that hint is replaced
+> via `replaces_id` — reproducible from `busctl` with no cicdbar involved.
+> `replaces_id` alone gives the same coalescing, so nothing is lost.
+
 ## Rate limiting
 
 GitHub enforces a **secondary** limit on burst concurrency that is separate

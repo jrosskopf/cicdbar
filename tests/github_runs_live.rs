@@ -150,3 +150,32 @@ fn summarises_ci_status_across_the_org_from_real_data() {
     }
     assert!(status.repos_polled > 0);
 }
+
+#[test]
+#[ignore = "hits the live GitHub API; needs a gh token"]
+fn the_default_branch_comes_from_the_repo_not_the_run_payload() {
+    // The runs API returns repository.default_branch as null, so a fallback of
+    // "main" is wrong for any repo that uses something else.
+    // DataZooDE/erpl uses "master": its main-branch runs were never counted.
+    let h = http();
+    let repos = github_runs::active_repos(&h, "DataZooDE", 3650, 100).expect("repos");
+    let erpl = repos
+        .iter()
+        .find(|r| r.name == "erpl")
+        .expect("erpl should be discoverable");
+    assert_eq!(erpl.default_branch, "master", "precondition for this test");
+
+    let runs = github_runs::recent_runs_for(&h, erpl, 30).expect("runs");
+    let on_master: Vec<_> = runs.iter().filter(|r| r.branch == "master").collect();
+    assert!(!on_master.is_empty(), "erpl has runs on master");
+    assert!(
+        on_master.iter().all(|r| r.is_default_branch),
+        "master runs must be recognised as default-branch runs"
+    );
+    assert!(
+        runs.iter()
+            .filter(|r| r.branch == "main")
+            .all(|r| !r.is_default_branch),
+        "a 'main' branch in erpl is NOT the default branch"
+    );
+}
