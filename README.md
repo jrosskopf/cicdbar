@@ -2,12 +2,12 @@
 
 > What your CI actually costs, in your status bar — GitHub Actions and Blacksmith, live.
 
-<img src="docs/img/bar.gif" alt="the cicdbar waybar module cycling through quiet, busy, broken and over-budget states" width="280">
+<img src="https://raw.githubusercontent.com/jrosskopf/cicdbar/main/docs/img/bar.gif" alt="the cicdbar waybar module cycling through quiet, busy, broken and over-budget states" width="280">
 
 [![CI](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml/badge.svg)](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/cicdbar.svg)](https://pypi.org/project/cicdbar/)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![licence](https://img.shields.io/badge/licence-MIT-blue.svg)](https://github.com/jrosskopf/cicdbar/blob/main/LICENSE)
 
 A [waybar](https://github.com/Alexays/Waybar) module that turns CI minutes into
 the number you actually care about: dollars. It reads GitHub's billing API and
@@ -116,7 +116,7 @@ The bar carries total spend, a CI glyph (`✓` clean, `●` running, `◌` queue
 `✖` failing) with the running count, and projected month-end spend as a
 percentage of budget.
 
-<img src="docs/img/tooltip.png" alt="the cicdbar tooltip" width="394">
+<img src="https://raw.githubusercontent.com/jrosskopf/cicdbar/main/docs/img/tooltip.png" alt="the cicdbar tooltip" width="394">
 
 Hovering expands it into per-org, per-SKU and per-repo spend, the projection,
 and every run currently in flight with its elapsed time, runner and — for
@@ -169,11 +169,11 @@ discover: the `?year=&month=` filter is **mandatory** for per-repo detail, and
 the two calls **disagree about storage** by $55 a month, with only one of them
 matching the invoice. cicdbar takes compute from the filtered call and storage
 from the unfiltered one. Both findings, and the invoice that settled the
-second, are written up in [`docs/github-billing.md`](docs/github-billing.md).
+second, are written up in [`docs/github-billing.md`](https://github.com/jrosskopf/cicdbar/blob/main/docs/github-billing.md).
 
 **Blacksmith** — they publish no billing API, so this reads the undocumented
 backend behind their dashboard, documented in
-[`docs/blacksmith-api.md`](docs/blacksmith-api.md) — as far as I know the only
+[`docs/blacksmith-api.md`](https://github.com/jrosskopf/cicdbar/blob/main/docs/blacksmith-api.md) — as far as I know the only
 written description of it anywhere. Auth is a Laravel cookie pair whose
 session half rotates on *every* response, so a naive client authenticates
 exactly once. If the session expires, the widget falls back to pricing
@@ -204,7 +204,7 @@ limit — which is separate from the 5,000/hr quota and can throttle you while
 `/rate_limit` still reports 5,000 remaining. It clears in minutes.
 
 **Blacksmith shows `~est`.** The dashboard session expired. Re-capture it as
-described in [`docs/blacksmith-api.md`](docs/blacksmith-api.md); until then
+described in [`docs/blacksmith-api.md`](https://github.com/jrosskopf/cicdbar/blob/main/docs/blacksmith-api.md); until then
 the figure is derived from job minutes at list prices and cannot see
 sticky-disk or cache charges.
 
@@ -260,7 +260,7 @@ filesystem, a real closed TCP port for the unreachable-API path, and the real
 compiled binary. That has a cost, and it has been worth it — the approach
 caught five bugs that a fixture built from my own assumptions would have
 confirmed rather than caught. They are listed in
-[`docs/testing.md`](docs/testing.md), along with why CI runs none of them.
+[`docs/testing.md`](https://github.com/jrosskopf/cicdbar/blob/main/docs/testing.md), along with why CI runs none of them.
 
 Live tests are `#[ignore]`d, so a fresh clone runs the offline suites and
 passes with no credentials.
@@ -278,4 +278,4 @@ later release; the numbers carry no other promise.
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/jrosskopf/cicdbar/blob/main/LICENSE).

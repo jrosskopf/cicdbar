@@ -109,6 +109,8 @@ jobs:
             --description "waybar widget for GitHub Actions + Blacksmith CI/CD spend and live job status" \
             --author "Joachim Rosskopf" \
             --license "MIT" \
+            --url "https://github.com/jrosskopf/cicdbar" \
+            --readme README.md \
             --entry-point cicdbar \
             --output-dir dist
 
