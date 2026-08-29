@@ -47,9 +47,15 @@ jobs:
           tar czf "$DIR.tar.gz" "$DIR"
           sha256sum "$DIR.tar.gz" > "$DIR.tar.gz.sha256"
           # Confirm the artefact really is static and really runs.
+          # A musl build is "static-pie linked"; plain "not a dynamic
+          # executable" from ldd only covers the non-PIE case.
           file "$DIR/cicdbar"
-          ldd "$DIR/cicdbar" 2>&1 | grep -q "not a dynamic executable" || {
-            echo "binary is not static"; exit 1; }
+          if ! file "$DIR/cicdbar" | grep -qE "static-pie linked|statically linked"; then
+            echo "binary is not static:"; file "$DIR/cicdbar"; exit 1
+          fi
+          if ldd "$DIR/cicdbar" 2>&1 | grep -qE "=> */"; then
+            echo "binary has shared library dependencies:"; ldd "$DIR/cicdbar"; exit 1
+          fi
           "$DIR/cicdbar" --version
 
       - uses: softprops/action-gh-release@v2
