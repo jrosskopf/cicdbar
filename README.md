@@ -2,7 +2,7 @@
 
 > What your CI actually costs, in your status bar — GitHub Actions and Blacksmith, live.
 
-<img src="docs/img/bar.png" alt="the cicdbar waybar module" width="156">
+<img src="docs/img/bar.gif" alt="the cicdbar waybar module cycling through quiet, busy, broken and over-budget states" width="280">
 
 [![CI](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml/badge.svg)](https://github.com/jrosskopf/cicdbar/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/cicdbar.svg)](https://pypi.org/project/cicdbar/)
@@ -122,7 +122,9 @@ Hovering expands it into per-org, per-SKU and per-repo spend, the projection,
 and every run currently in flight with its elapsed time, runner and — for
 Blacksmith runners — what it has cost so far.
 
-*(Screenshots use `--demo`, so the figures and repository names are synthetic.)*
+*(Recordings use `--demo`, so the figures and repository names are synthetic.
+`--demo 1..4` cycles the states shown above, which is also a quick way to check
+your theme.)*
 
 `--tooltip-only` prints the same thing as plain text, which is handy for
 checking it in a terminal.

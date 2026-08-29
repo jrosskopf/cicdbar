@@ -34,9 +34,11 @@ struct Args {
     #[arg(long)]
     config: Option<std::path::PathBuf>,
 
-    /// Render fixed sample data without touching the network.
-    #[arg(long)]
-    demo: bool,
+    /// Render fixed sample data without touching the network. Optionally
+    /// takes a scenario number (1-4) cycling through quiet, busy, broken and
+    /// over-budget states.
+    #[arg(long, num_args = 0..=1, default_missing_value = "2")]
+    demo: Option<u8>,
 
     /// Ignore cached values and refetch everything.
     #[arg(long)]
@@ -87,8 +89,11 @@ fn strip_markup(s: &str) -> String {
 }
 
 fn run(args: &Args) -> anyhow::Result<String> {
-    if args.demo {
-        return Ok(render::waybar_json(&Snapshot::demo(), &args.format));
+    if let Some(scenario) = args.demo {
+        return Ok(render::waybar_json(
+            &Snapshot::demo_scenario(scenario),
+            &args.format,
+        ));
     }
 
     let cfg_path = args.config.clone().unwrap_or_else(Config::default_path);

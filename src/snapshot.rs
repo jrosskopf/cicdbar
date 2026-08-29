@@ -94,6 +94,49 @@ impl Snapshot {
     /// A fixed snapshot for tests and `--demo`, so rendering can be exercised
     /// without the network.
     pub fn demo() -> Snapshot {
+        Snapshot::demo_scenario(2)
+    }
+
+    /// One of four demo states, cycling. Covers every glyph and severity the
+    /// bar can show, which is what the README demo walks through -- and a
+    /// convenient way to eyeball rendering without waiting for real CI to
+    /// misbehave.
+    ///
+    /// Never names a real organisation or repository.
+    pub fn demo_scenario(n: u8) -> Snapshot {
+        let mut s = Snapshot::demo_base();
+        match ((n.max(1) - 1) % 4) + 1 {
+            // Quiet: nothing running, comfortably inside budget.
+            1 => {
+                s.running = 0;
+                s.queued = 0;
+                s.failures = 0;
+                s.in_flight.clear();
+                s.in_flight_estimate = Usd::zero();
+                s.github.net = Usd::from_f64(88.40);
+            }
+            // Busy: work in flight, Blacksmith cost accruing.
+            2 => {}
+            // Broken: a default-branch failure.
+            3 => {
+                s.running = 1;
+                s.failures = 2;
+                s.github.net = Usd::from_f64(291.20);
+                s.failure_runs = vec![failed_run("widget-service", "CI"), failed_run("api-gateway", "nightly")];
+            }
+            // Over budget: projection past 100%.
+            _ => {
+                s.running = 3;
+                s.failures = 1;
+                s.github.net = Usd::from_f64(402.75);
+                s.failure_runs = vec![failed_run("widget-service", "release")];
+            }
+        }
+        s.recompute_projection();
+        s
+    }
+
+    fn demo_base() -> Snapshot {
         let now: Timestamp = "2026-08-29T06:30:00Z".parse().unwrap();
         let mut s = Snapshot::new(now);
         s.github.net = Usd::from_f64(232.02);
@@ -140,5 +183,21 @@ impl Snapshot {
         s.in_flight_estimate = Usd::from_f64(0.05);
         s.recompute_projection();
         s
+    }
+}
+
+fn failed_run(repo: &str, workflow: &str) -> RunSummary {
+    RunSummary {
+        id: 2,
+        repo: repo.into(),
+        owner: "acme".into(),
+        workflow: workflow.into(),
+        branch: "main".into(),
+        status: "completed".into(),
+        conclusion: Some("failure".into()),
+        started_at: Some("2026-08-29T05:10:00Z".into()),
+        updated_at: Some("2026-08-29T05:18:00Z".into()),
+        is_default_branch: true,
+        url: "https://github.com/acme/widget-service/actions/runs/2".into(),
     }
 }
