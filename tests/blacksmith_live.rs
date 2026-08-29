@@ -76,7 +76,10 @@ fn discovers_blacksmith_repos_across_the_org_from_real_data() {
     // earlier version of this test pinned a repo that simply moved down.
     let h = http();
     let repos = blacksmith::discover_repos(&h, "DataZooDE", 7, 8).expect("discover");
-    assert!(!repos.is_empty(), "this org does use blacksmith runners somewhere");
+    assert!(
+        !repos.is_empty(),
+        "this org does use blacksmith runners somewhere"
+    );
 
     // Everything returned must genuinely have blacksmith-priced minutes.
     for repo in &repos {
