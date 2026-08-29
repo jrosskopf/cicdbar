@@ -10,7 +10,7 @@ use cicdbar::cycle::Cycle;
 use cicdbar::http::Http;
 use cicdbar::money::Usd;
 use cicdbar::providers::blacksmith;
-use cicdbar::providers::github_billing::{self, Spend, UsageItem};
+use cicdbar::providers::github_billing::{self, Spend};
 use cicdbar::providers::github_runs::{self, CiStatus, RunnerKind};
 use cicdbar::render;
 use cicdbar::snapshot::Snapshot;
@@ -125,19 +125,26 @@ fn run(args: &Args) -> anyhow::Result<String> {
     let billing: Vec<_> = github_runs::fan_out(&cfg.github.orgs, |org| {
         let key = format!("billing-{org}-{}-{}", cycle.year, cycle.month);
         cache.get_or_refresh(&key, billing_ttl, || {
-            github_billing::fetch(&http, org, cycle.year, cycle.month as u8).map_err(|e| e.short())
+            // Both endpoints: compute comes from the detail, storage from the
+            // rollup, because only the rollup matches the invoice.
+            let detail = github_billing::fetch(&http, org, cycle.year, cycle.month as u8)
+                .map_err(|e| e.short())?;
+            let rollup = github_billing::fetch_rollup(&http, org).map_err(|e| e.short())?;
+            Ok::<_, String>((detail, rollup))
         })
     });
     for (org, fetched) in cfg.github.orgs.iter().zip(billing) {
         match fetched {
-            Ok((items, freshness)) => {
+            Ok(((detail, rollup), freshness)) => {
                 note_stale(&freshness, &mut oldest_stale);
-                let spend: Spend = github_billing::aggregate(&items);
-                if spend.net > Usd::zero() || !items.is_empty() {
+                // Compute from the detail (per-repo), storage from the rollup
+                // (what GitHub actually invoices).
+                let spend: Spend =
+                    github_billing::combine(&detail, &rollup, cycle.year, cycle.month as u8);
+                if spend.net > Usd::zero() || !detail.is_empty() {
                     snap.per_org.push((org.clone(), spend.net));
                 }
                 merged.merge(&spend);
-                check_storage_divergence(&http, org, &items, &mut snap, &cache, billing_ttl);
             }
             Err(reason) => snap.notes.push(format!("{org}: {reason}")),
         }
@@ -245,42 +252,6 @@ fn run(args: &Args) -> anyhow::Result<String> {
         );
     }
     Ok(render::waybar_json(&snap, &args.format))
-}
-
-/// The monthly rollup reports Actions storage with no discount applied while
-/// the per-day detail applies the included allowance. Surface the gap rather
-/// than silently picking a side.
-fn check_storage_divergence(
-    http: &Http,
-    org: &str,
-    detail: &[UsageItem],
-    snap: &mut Snapshot,
-    cache: &Cache,
-    ttl: u64,
-) {
-    let key = format!("rollup-{org}");
-    let Ok((rollup, _)) = cache.get_or_refresh(&key, ttl.max(3600), || {
-        github_billing::fetch_rollup(http, org).map_err(|e| e.short())
-    }) else {
-        return;
-    };
-    let month_prefix = {
-        let c = Cycle::containing(Timestamp::now());
-        format!("{:04}-{:02}", c.year, c.month)
-    };
-    let storage = |rows: &[UsageItem]| -> Usd {
-        rows.iter()
-            .filter(|r| r.is_storage() && r.date.starts_with(&month_prefix))
-            .map(|r| Usd::from_f64(r.net_amount))
-            .sum()
-    };
-    let (d, r) = (storage(detail), storage(&rollup));
-    if r > d + Usd::from_f64(1.0) {
-        snap.storage_divergence = Some(r - d);
-        snap.notes.push(format!(
-            "{org}: rollup bills storage at {r} vs {d} after allowance — reconcile with the invoice"
-        ));
-    }
 }
 
 /// Sum the Blacksmith minutes GitHub reports for this month's jobs.

@@ -114,10 +114,12 @@ tooltip as plain text for eyeballing in a terminal.
 
 ## How the numbers are obtained
 
-**GitHub** — `GET /organizations/{org}/settings/billing/usage?year=&month=`.
-Two things about that endpoint cost real time to discover: the filter is
-**mandatory** for per-repo detail, and the filtered and unfiltered calls
-**disagree on storage** by design. Both are written up in
+**GitHub** — `GET /organizations/{org}/settings/billing/usage`, both filtered
+and unfiltered. Two things about that endpoint cost real time to discover: the
+`?year=&month=` filter is **mandatory** for per-repo detail, and the two calls
+**disagree about storage** — by $55 a month, with only one of them matching
+the invoice. cicdbar takes compute from the filtered call and storage from the
+unfiltered one. Both findings, and the invoice that settled the second, are in
 [`docs/github-billing.md`](docs/github-billing.md).
 
 **Blacksmith** — they publish no billing API, so this reads the undocumented

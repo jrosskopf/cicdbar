@@ -20,8 +20,6 @@ pub struct Snapshot {
     pub blacksmith: Option<Usd>,
     pub blacksmith_estimate: Usd,
     pub blacksmith_is_estimate: bool,
-    /// The rollup's storage figure, when it disagrees with the detail.
-    pub storage_divergence: Option<Usd>,
     pub budget: Usd,
     pub projected: Usd,
     pub running: usize,
@@ -49,7 +47,6 @@ impl Snapshot {
             blacksmith: None,
             blacksmith_estimate: Usd::zero(),
             blacksmith_is_estimate: true,
-            storage_divergence: None,
             budget: Usd::zero(),
             projected: Usd::zero(),
             running: 0,

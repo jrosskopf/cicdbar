@@ -41,13 +41,30 @@ apply $55.41 of included-storage allowance; the rollup applies **zero**.
 Compute SKUs agree to the cent, which is what makes the storage gap look like
 a property of the endpoints rather than a timing artefact.
 
-`cicdbar` sources every figure from the detail — it is the one that applies
-allowances consistently and the only one with repo granularity — and raises a
-tooltip note when the rollup disagrees by more than $1, so the difference can
-be reconciled against the actual invoice instead of silently trusting either.
+### The rollup is the one that matches the invoice
 
-**Which one matches your bill is not something this tool can tell you.**
-Check an invoice once and believe that.
+Settled against a real bill. July 2026 is a completed month, so its invoice is
+final, and the two interpretations predicted different totals:
+
+| | Storage | Month total |
+|---|---|---|
+| if the detail were right | $2.91 | $167.55 |
+| **if the rollup is right** | **$45.99** | **$210.63** |
+
+The invoice said **$210.63**. The discount the detail rows report against
+storage — $43.08 for July — is **not applied to the bill**.
+
+So `cicdbar` takes **compute from the detail** (the only source with repo
+granularity, and it agrees with the rollup to the cent) and **storage from the
+rollup** (the only one that matches what you pay). Sourcing storage from the
+detail understated spend by roughly $55 a month.
+
+Storage is deliberately left out of the per-repo breakdown: the rollup names a
+single arbitrary repository per SKU, so attributing it would be inventing a
+breakdown that does not exist.
+
+If you are writing your own client, this is the trap: the detail rows look
+more precise, carry more structure, and are wrong about money.
 
 ## Access and scopes
 

@@ -40,6 +40,58 @@ fn fetches_current_month_usage_with_per_repo_granularity() {
 
 #[test]
 #[ignore = "hits the live GitHub billing API; needs a gh token and billing-read access"]
+fn the_headline_figure_matches_what_github_actually_invoices() {
+    // Settled against a real July 2026 invoice: GitHub billed $210.63 with
+    // $45.99 of Actions storage -- the MONTHLY ROLLUP figure. The per-day
+    // detail rows report a storage discount ($43.08 for July) that is not
+    // applied to the bill, so sourcing storage from the detail understates
+    // spend by tens of dollars a month.
+    let h = http();
+    let spend = github_billing::month_spend(&h, "DataZooDE", 2026, 7).expect("july");
+
+    // The invoice states cents, so compare what we would display.
+    assert_eq!(spend.net.to_string(), "$210.63");
+
+    // Storage comes from the rollup, undiscounted.
+    let storage: Usd = spend
+        .per_sku
+        .iter()
+        .filter(|(k, _)| k.to_lowercase().contains("storage"))
+        .map(|(_, v)| *v)
+        .sum();
+    assert_eq!(storage.to_string(), "$45.99");
+
+    // Compute still carries per-repo detail, which the rollup cannot give.
+    assert!(spend.per_repo.len() > 5, "per-repo breakdown must survive");
+}
+
+#[test]
+#[ignore = "hits the live GitHub billing API; needs a gh token and billing-read access"]
+fn storage_is_never_taken_from_the_detail_rows() {
+    // The regression that cost $55/month: detail storage rows carry a
+    // discount GitHub does not honour.
+    let h = http();
+    let detail = github_billing::fetch(&h, "DataZooDE", 2026, 7).expect("detail");
+    let detail_storage: Usd = detail
+        .iter()
+        .filter(|r| r.is_storage())
+        .map(|r| Usd::from_f64(r.net_amount))
+        .sum();
+    let spend = github_billing::month_spend(&h, "DataZooDE", 2026, 7).expect("july");
+    let storage: Usd = spend
+        .per_sku
+        .iter()
+        .filter(|(k, _)| k.to_lowercase().contains("storage"))
+        .map(|(_, v)| *v)
+        .sum();
+    assert!(
+        storage > detail_storage + Usd::from_f64(10.0),
+        "storage {storage} must come from the rollup, not the detail's {detail_storage}"
+    );
+}
+
+#[test]
+#[ignore = "hits the live GitHub billing API; needs a gh token and billing-read access"]
 fn detail_rows_agree_with_the_monthly_rollup_on_compute_skus() {
     // The two endpoints agree on compute and disagree on storage, because
     // only the detail applies the included allowance. This is what justifies

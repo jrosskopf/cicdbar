@@ -6,8 +6,16 @@
 //!   DataZooDE in a month). This is our source of truth: it carries the repo
 //!   breakdown and it applies the included allowances.
 //! * unfiltered returns a monthly rollup. It agrees with the detail exactly on
-//!   compute SKUs, but reports storage with **no** discount applied, so its
-//!   storage figure runs far higher. We fetch it only to report that divergence.
+//!   compute SKUs, but reports storage with **no** discount applied.
+//!
+//! The two disagree on storage, and **the rollup is the one that matches the
+//! invoice**. Checked against a real July 2026 bill: GitHub charged $210.63
+//! with $45.99 of Actions storage, exactly the rollup's figure; the detail
+//! rows claimed $43.08 of storage discount that was never applied. Sourcing
+//! storage from the detail understated spend by ~$55 a month.
+//!
+//! So `month_spend` takes compute from the detail (which carries the per-repo
+//! breakdown the rollup lacks) and storage from the rollup.
 
 use crate::http::{ApiError, Http};
 use crate::money::Usd;
@@ -96,6 +104,46 @@ impl Spend {
     pub fn by_org(&self) -> Vec<(String, Usd)> {
         Self::sorted(&self.per_org)
     }
+}
+
+/// One month's spend as GitHub will actually invoice it.
+///
+/// Compute comes from the per-day detail, which is the only source with repo
+/// granularity and which agrees with the rollup to the cent. Storage comes
+/// from the monthly rollup, because the detail's storage discount is not
+/// honoured on the bill.
+pub fn month_spend(http: &Http, org: &str, year: i16, month: u8) -> Result<Spend, ApiError> {
+    let detail = fetch(http, org, year, month)?;
+    let rollup = fetch_rollup(http, org)?;
+    Ok(combine(&detail, &rollup, year, month))
+}
+
+/// Split out from `month_spend` so the combination rule can be exercised
+/// without two network round-trips.
+pub fn combine(detail: &[UsageItem], rollup: &[UsageItem], year: i16, month: u8) -> Spend {
+    let prefix = format!("{year:04}-{month:02}");
+    let compute: Vec<UsageItem> = detail.iter().filter(|r| !r.is_storage()).cloned().collect();
+    let storage: Vec<UsageItem> = rollup
+        .iter()
+        .filter(|r| r.is_storage() && r.date.starts_with(&prefix))
+        .cloned()
+        .collect();
+
+    let mut spend = aggregate(&compute);
+    let storage_spend = aggregate(&storage);
+    spend.net += storage_spend.net;
+    spend.gross += storage_spend.gross;
+    spend.discount += storage_spend.discount;
+    for (k, v) in &storage_spend.per_sku {
+        *spend.per_sku.entry(k.clone()).or_default() += *v;
+    }
+    for (k, v) in &storage_spend.per_org {
+        *spend.per_org.entry(k.clone()).or_default() += *v;
+    }
+    // Deliberately NOT merged into per_repo: the rollup names a single
+    // arbitrary repository per SKU, so attributing storage to it would be
+    // inventing a breakdown that does not exist.
+    spend
 }
 
 pub fn aggregate(items: &[UsageItem]) -> Spend {
