@@ -13,12 +13,19 @@ cd "$(dirname "$0")"
 cargo build --release --tests
 
 offline=(money config_and_cycle render cache transitions)
+# telemetry mutates process-global env vars to test the opt-outs, so it runs alone
+telemetry=(telemetry telemetry_rollup)
 live=(github_billing_live github_runs_live blacksmith_live etag_live notify_live performance_live)
 
 fail=0
 for t in "${offline[@]}"; do
     printf '\n\033[1m== %s ==\033[0m\n' "$t"
     cargo test --release --test "$t" || fail=1
+done
+
+for t in "${telemetry[@]}"; do
+    printf '\n\033[1m== %s ==\033[0m\n' "$t"
+    cargo test --release --test "$t" -- --test-threads=1 || fail=1
 done
 
 # Live suites are paced apart. Back to back they trip GitHub's secondary

@@ -85,3 +85,12 @@ repos = []             # empty means every watched repo
 # Above this many events in one tick, collapse to a single summary. A push
 # fans out to many workflows at once, so bursts are the normal case.
 max_per_tick = 8
+
+# Anonymous usage telemetry. On by default; see TELEMETRY.md for exactly what
+# is and is not collected. No dollar amount, name, path or token can reach it,
+# and one event is sent per day at most -- never per tick.
+#
+# Also disabled by --no-telemetry, CICDBAR_NO_TELEMETRY=1,
+# DATAZOO_DISABLE_TELEMETRY=1, or DO_NOT_TRACK=1.
+[telemetry]
+enabled = true

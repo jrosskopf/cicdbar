@@ -7,5 +7,6 @@ pub mod notify;
 pub mod providers;
 pub mod render;
 pub mod snapshot;
+pub mod telemetry;
 pub mod token;
 pub mod transitions;

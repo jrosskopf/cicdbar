@@ -267,6 +267,24 @@ passes with no credentials.
 
 ---
 
+## Telemetry
+
+cicdbar sends anonymous usage telemetry, on by default, using the shared
+DataZoo schema. **It never transmits a dollar amount, a budget, an
+organisation or repository name, a path, or a token** — that is enforced by an
+allow-list of permitted properties and values, with tests that feed
+real-looking secrets through the capture path and assert none appear.
+
+Because waybar re-execs the binary every 60 seconds, telemetry sends **at most
+one event per day**, carrying bucketed aggregates; a normal tick touches no
+network at all and stays at 4 ms.
+
+Turn it off with any of `--no-telemetry`, `CICDBAR_NO_TELEMETRY=1`,
+`DATAZOO_DISABLE_TELEMETRY=1`, `DO_NOT_TRACK=1`, or `telemetry.enabled = false`.
+Full detail in [TELEMETRY.md](https://github.com/jrosskopf/cicdbar/blob/main/TELEMETRY.md).
+
+---
+
 ## Versioning
 
 Calendar versioning: `YYYY.M.D`, tagged `vYYYY.M.D`. Month and day are not

@@ -16,6 +16,22 @@ pub struct Config {
     pub cache: CacheConfig,
     pub theme: Theme,
     pub notifications: NotificationConfig,
+    pub telemetry: TelemetryConfig,
+}
+
+/// Anonymous usage telemetry. See TELEMETRY.md for exactly what is and is not
+/// collected; the short version is that no amount, budget, name, path or
+/// token can reach it.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct TelemetryConfig {
+    pub enabled: bool,
+}
+
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        TelemetryConfig { enabled: true }
+    }
 }
 
 /// Desktop notifications when runs start and finish.
@@ -136,6 +152,7 @@ impl Default for Config {
             cache: CacheConfig::default(),
             theme: Theme::default(),
             notifications: NotificationConfig::default(),
+            telemetry: TelemetryConfig::default(),
         }
     }
 }

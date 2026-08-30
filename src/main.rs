@@ -15,6 +15,8 @@ use cicdbar::providers::github_billing::{self, Spend};
 use cicdbar::providers::github_runs::{self, CiStatus, RunnerKind};
 use cicdbar::render;
 use cicdbar::snapshot::Snapshot;
+use cicdbar::telemetry::rollup::{self, RollupState};
+use cicdbar::telemetry::Telemetry;
 use cicdbar::transitions::{self, NotifyState};
 use clap::Parser;
 use jiff::Timestamp;
@@ -55,6 +57,10 @@ struct Args {
     /// Never send desktop notifications on this run.
     #[arg(long)]
     no_notify: bool,
+
+    /// Disable anonymous usage telemetry for this run. See TELEMETRY.md.
+    #[arg(long)]
+    no_telemetry: bool,
 }
 
 fn main() {
@@ -267,6 +273,12 @@ fn run(args: &Args) -> anyhow::Result<String> {
         }
     }
 
+    // ---- Telemetry ----
+    // A tick only bumps counters on disk; at most once a day one event
+    // carries bucketed aggregates. Nothing here touches the network on a
+    // normal tick, and nothing it sends describes money or names.
+    record_telemetry(&cfg, &cache, args.no_telemetry, &snap, runs_were_stale);
+
     snap.recompute_projection();
     if args.stats {
         eprintln!(
@@ -277,6 +289,74 @@ fn run(args: &Args) -> anyhow::Result<String> {
         );
     }
     Ok(render::waybar_json(&snap, &args.format))
+}
+
+/// Update the telemetry rollup, and send it if the window has closed.
+fn record_telemetry(cfg: &Config, cache: &Cache, force_off: bool, snap: &Snapshot, degraded: bool) {
+    const KEY: &str = "telemetry-rollup";
+    if !cfg.telemetry.enabled || force_off {
+        return;
+    }
+    let t = Telemetry::new(
+        "cicdbar",
+        env!("CARGO_PKG_VERSION"),
+        "CICDBAR_NO_TELEMETRY",
+        false,
+    );
+    if !t.is_enabled() {
+        return;
+    }
+    first_run_notice(cache);
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let mut state: RollupState = cache.read_raw(KEY).unwrap_or_default();
+    rollup::record_tick(&mut state, now);
+    state.orgs = cfg.github.orgs.len();
+    state.repos = snap.repos_polled;
+    state.blacksmith_enabled = cfg.blacksmith.enabled;
+    state.blacksmith_dashboard_ok = !snap.blacksmith_is_estimate;
+    state.notifications_enabled = cfg.notifications.enabled;
+    if degraded {
+        state.degraded += 1;
+    }
+
+    if rollup::should_flush(&state, now) {
+        let window = rollup::take_for_flush(&mut state, now);
+        t.capture("feature_used", rollup::properties(&window));
+        for class in &window.errors {
+            t.capture(
+                "$exception",
+                vec![
+                    (
+                        "error_class",
+                        cicdbar::telemetry::Value::from(class.as_str()),
+                    ),
+                    ("phase", cicdbar::telemetry::Value::from("billing")),
+                ],
+            );
+        }
+        t.flush();
+    }
+    cache.write_raw(KEY, &state);
+}
+
+/// One line to stderr, once per install, pointing at the policy.
+fn first_run_notice(cache: &Cache) {
+    let marker = cache.dir().join("telemetry-notice-shown");
+    if marker.exists() {
+        return;
+    }
+    let _ = std::fs::write(&marker, "1");
+    eprintln!(
+        "cicdbar sends anonymous usage telemetry (no spend figures, no names). \
+         Disable with --no-telemetry, CICDBAR_NO_TELEMETRY=1, DO_NOT_TRACK=1, \
+         or telemetry.enabled=false. See \
+         https://github.com/jrosskopf/cicdbar/blob/main/TELEMETRY.md"
+    );
 }
 
 /// Diff this tick's runs against the last, and notify about what changed.
