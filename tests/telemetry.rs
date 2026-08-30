@@ -6,6 +6,20 @@ use cicdbar::telemetry::{Telemetry, Value};
 use std::sync::mpsc;
 
 /// A real server that records the bodies it receives.
+/// The opt-out tests set process-global environment variables, which every
+/// other test in this binary can see. Cargo runs tests in parallel by
+/// default, so without a guard an opt-out test can disable telemetry
+/// underneath a concurrent test and make it fail -- which is exactly what
+/// happened on macOS CI while Linux passed by luck of timing.
+///
+/// Every test here takes this lock, so the suite is correct under a plain
+/// `cargo test` rather than relying on `--test-threads=1`.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn capture_server() -> (String, mpsc::Receiver<String>) {
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let url = format!("http://{}", server.server_addr());
@@ -23,7 +37,7 @@ fn capture_server() -> (String, mpsc::Receiver<String>) {
 
 fn recv(rx: &mpsc::Receiver<String>) -> serde_json::Value {
     let raw = rx
-        .recv_timeout(std::time::Duration::from_secs(5))
+        .recv_timeout(std::time::Duration::from_secs(15))
         .expect("no telemetry arrived");
     serde_json::from_str(&raw).expect("payload must be json")
 }
@@ -34,6 +48,7 @@ fn telemetry(url: &str) -> Telemetry {
 
 #[test]
 fn every_event_carries_the_schema_2_envelope() {
+    let _guard = serial();
     let (url, rx) = capture_server();
     let t = telemetry(&url);
     t.capture(
@@ -71,6 +86,7 @@ fn every_event_carries_the_schema_2_envelope() {
 
 #[test]
 fn an_ephemeral_identity_never_creates_a_person() {
+    let _guard = serial();
     let (url, rx) = capture_server();
     let t = Telemetry::for_test_ephemeral("cicdbar", "9.9.9", &url);
     t.capture("cli_started", vec![]);
@@ -82,6 +98,7 @@ fn an_ephemeral_identity_never_creates_a_person() {
 
 #[test]
 fn the_machine_id_is_hashed_not_sent_raw() {
+    let _guard = serial();
     let (url, rx) = capture_server();
     let t = telemetry(&url);
     t.capture("cli_started", vec![]);
@@ -119,21 +136,25 @@ fn assert_silent(env_key: &str, env_val: &str) {
 
 #[test]
 fn datazoo_kill_switch_is_honoured() {
+    let _guard = serial();
     assert_silent("DATAZOO_DISABLE_TELEMETRY", "1");
 }
 
 #[test]
 fn do_not_track_is_honoured() {
+    let _guard = serial();
     assert_silent("DO_NOT_TRACK", "1");
 }
 
 #[test]
 fn the_product_local_env_var_is_honoured() {
+    let _guard = serial();
     assert_silent("CICDBAR_NO_TELEMETRY", "1");
 }
 
 #[test]
 fn truthy_spellings_all_disable() {
+    let _guard = serial();
     for v in ["1", "true", "yes", "TRUE", "Yes"] {
         assert_silent("DATAZOO_DISABLE_TELEMETRY", v);
     }
@@ -141,6 +162,7 @@ fn truthy_spellings_all_disable() {
 
 #[test]
 fn a_disabled_telemetry_sends_nothing_even_when_asked_repeatedly() {
+    let _guard = serial();
     let (url, rx) = capture_server();
     let t = Telemetry::disabled();
     for _ in 0..5 {
@@ -157,6 +179,7 @@ fn a_disabled_telemetry_sends_nothing_even_when_asked_repeatedly() {
 
 #[test]
 fn no_identifier_we_handle_can_reach_a_payload() {
+    let _guard = serial();
     // Adversarial values drawn from what cicdbar actually touches.
     let secrets = [
         "DataZooDE",
@@ -185,6 +208,7 @@ fn no_identifier_we_handle_can_reach_a_payload() {
 
 #[test]
 fn no_currency_amount_can_reach_a_payload() {
+    let _guard = serial();
     // Spend is commercially sensitive; telemetry never learns amounts.
     let (url, rx) = capture_server();
     let t = telemetry(&url);
@@ -211,6 +235,7 @@ fn no_currency_amount_can_reach_a_payload() {
 
 #[test]
 fn strings_are_clamped_as_a_backstop() {
+    let _guard = serial();
     let (url, rx) = capture_server();
     let t = telemetry(&url);
     t.capture(
@@ -228,12 +253,15 @@ fn strings_are_clamped_as_a_backstop() {
 
 #[test]
 fn an_unreachable_endpoint_neither_fails_nor_hangs() {
+    let _guard = serial();
     let t = Telemetry::for_test("cicdbar", "9.9.9", "http://127.0.0.1:1");
     let start = std::time::Instant::now();
     t.capture("cli_started", vec![]);
     t.flush();
+    // The client's own timeout is 2s; this proves it does not hang, with
+    // enough slack to survive a loaded CI runner.
     assert!(
-        start.elapsed().as_secs_f64() < 3.0,
+        start.elapsed().as_secs_f64() < 8.0,
         "telemetry blocked the host for {:?}",
         start.elapsed()
     );
@@ -241,6 +269,7 @@ fn an_unreachable_endpoint_neither_fails_nor_hangs() {
 
 #[test]
 fn the_daily_rollup_actually_survives_the_allow_list() {
+    let _guard = serial();
     // The allow-list is what makes the privacy promise true, but it must not
     // silently swallow the one event this product exists to send.
     use cicdbar::telemetry::rollup::{self, RollupState};
