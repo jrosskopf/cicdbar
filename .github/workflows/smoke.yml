@@ -1,0 +1,86 @@
+name: Smoke
+
+# Proves the published PyPI wheels actually install and run on every platform
+# we claim to support. Building a wheel and publishing it says nothing about
+# whether the binary inside it starts.
+#
+# Runs automatically after a successful release, and can be run by hand
+# against any published version.
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to smoke test (default: latest on PyPI)"
+        required: false
+        type: string
+
+jobs:
+  uvx:
+    # Skip if the release itself failed -- there would be nothing to test.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Only one wheel is published: cicdbar is a waybar module talking to
+          # D-Bus, so a macOS or Windows wheel would install a binary that
+          # cannot do anything. If that ever changes, add the platform here
+          # and to the pypi-wheels matrix in release.yml together.
+          - os: ubuntu-latest
+            label: linux-x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Wait for the version to appear on PyPI
+        shell: bash
+        run: |
+          # PyPI's index is eventually consistent; a release publishes and the
+          # package is briefly unresolvable.
+          WANT="${{ inputs.version }}"
+          if [ -z "$WANT" ]; then
+            WANT=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          fi
+          echo "WANT=$WANT" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            if curl -sf "https://pypi.org/pypi/cicdbar/$WANT/json" > /dev/null; then
+              echo "cicdbar $WANT is on PyPI"; exit 0
+            fi
+            echo "attempt $i: not yet visible, waiting"; sleep 10
+          done
+          echo "cicdbar $WANT never appeared on PyPI"; exit 1
+
+      - name: uvx runs the published wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=$(uvx --refresh --from "cicdbar==${WANT}" cicdbar --version)
+          echo "$OUT"
+          echo "$OUT" | grep -q "cicdbar ${WANT}" || {
+            echo "expected 'cicdbar ${WANT}', got: $OUT"; exit 1; }
+
+      - name: the published binary really works, not just starts
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --demo needs no credentials and exercises the real render path.
+          OUT=$(uvx --from "cicdbar==${WANT}" cicdbar --demo)
+          echo "$OUT"
+          echo "$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["text"] and d["tooltip"] and d["class"], d; print("valid waybar JSON, class =", d["class"])' 
+
+      - name: the tool is also installable, not just runnable
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv tool install "cicdbar==${WANT}"
+          cicdbar --version
+          uv tool uninstall cicdbar
