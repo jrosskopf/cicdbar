@@ -291,18 +291,24 @@ fn run(args: &Args) -> anyhow::Result<String> {
     Ok(render::waybar_json(&snap, &args.format))
 }
 
+/// The only `feature` values cicdbar may emit.
+const CICDBAR_FEATURES: &[&str] = &[
+    "spend_shown",
+    "tooltip_rendered",
+    "notification_sent",
+    "blacksmith_dashboard",
+    "blacksmith_estimate",
+    "demo",
+];
+
 /// Update the telemetry rollup, and send it if the window has closed.
 fn record_telemetry(cfg: &Config, cache: &Cache, force_off: bool, snap: &Snapshot, degraded: bool) {
     const KEY: &str = "telemetry-rollup";
     if !cfg.telemetry.enabled || force_off {
         return;
     }
-    let t = Telemetry::new(
-        "cicdbar",
-        env!("CARGO_PKG_VERSION"),
-        "CICDBAR_NO_TELEMETRY",
-        false,
-    );
+    let t =
+        Telemetry::new("cicdbar", env!("CARGO_PKG_VERSION"), false).with_features(CICDBAR_FEATURES);
     if !t.is_enabled() {
         return;
     }

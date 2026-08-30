@@ -1,6 +1,11 @@
 //! Anonymous usage telemetry, emitting the DataZoo `telemetry_schema: 2`
 //! envelope so this product is comparable with the rest of the stack.
 //!
+//! **This file is shared verbatim between `cicdbar` and `padctl`.** It carries
+//! no product-specific vocabulary -- the `feature` values are registered by the
+//! host via `with_features` -- so the two copies must stay byte-identical.
+//! Each repo runs the same envelope test; if the copies drift, those fail.
+//!
 //! The canonical implementation is the C++ library
 //! `DataZooDE/posthog-telemetry`. This is a Rust port of the same contract --
 //! linking the C++ one would drag a C++ toolchain into the static musl build.
@@ -142,8 +147,13 @@ const ALLOWED_SCALAR_PROPS: &[&str] = &[
     "call_count",
 ];
 
-fn property_allowed(key: &str, value: &Value) -> bool {
+fn property_allowed(key: &str, value: &Value, features: &[&'static str]) -> bool {
     if let Value::Str(s) = value {
+        if key == "feature" {
+            // Registered by the host product, so this module stays free of
+            // product-specific vocabulary and can be shared verbatim.
+            return features.contains(&s.as_str());
+        }
         return ALLOWED_ENUM_PROPS
             .iter()
             .any(|(k, allowed)| *k == key && allowed.contains(&s.as_str()));
@@ -162,10 +172,20 @@ fn env_truthy(key: &str) -> bool {
     std::env::var(key).map(|v| truthy(&v)).unwrap_or(false)
 }
 
+/// The product-local kill switch, e.g. `cicdbar` -> `CICDBAR_NO_TELEMETRY`.
+pub fn product_env_var(product: &str) -> String {
+    format!(
+        "{}_NO_TELEMETRY",
+        product.to_ascii_uppercase().replace('-', "_")
+    )
+}
+
 /// Any one of these disables telemetry entirely, enforced before anything
 /// touches the network.
-pub fn disabled_by_environment(product_env: &str) -> bool {
-    env_truthy("DATAZOO_DISABLE_TELEMETRY") || env_truthy("DO_NOT_TRACK") || env_truthy(product_env)
+pub fn disabled_by_environment(product: &str) -> bool {
+    env_truthy("DATAZOO_DISABLE_TELEMETRY")
+        || env_truthy("DO_NOT_TRACK")
+        || env_truthy(&product_env_var(product))
 }
 
 fn is_ci() -> bool {
@@ -261,14 +281,14 @@ pub struct Telemetry {
     distinct_id: String,
     identity: IdentitySource,
     session_id: String,
+    features: Vec<&'static str>,
     queue: std::sync::Mutex<Vec<serde_json::Value>>,
 }
 
 impl Telemetry {
-    /// Build for real use. `product_env` is the product-local kill switch,
-    /// e.g. `CICDBAR_NO_TELEMETRY`.
-    pub fn new(product: &str, version: &str, product_env: &str, force_off: bool) -> Telemetry {
-        let enabled = !force_off && !disabled_by_environment(product_env);
+    /// Build for real use.
+    pub fn new(product: &str, version: &str, force_off: bool) -> Telemetry {
+        let enabled = !force_off && !disabled_by_environment(product);
         let (distinct_id, identity) = if enabled {
             machine_identity()
         } else {
@@ -287,10 +307,22 @@ impl Telemetry {
                 std::process::id()
             ))[..32]
                 .to_string(),
+            features: Vec::new(),
             queue: std::sync::Mutex::new(Vec::new()),
         }
     }
 
+    /// Register the `feature` values this product may emit. Anything not
+    /// listed here is dropped, so the vocabulary stays small and enumerated
+    /// -- and this module stays free of product-specific words, which is what
+    /// lets the same file live in every Rust product unchanged.
+    pub fn with_features(mut self, features: &[&'static str]) -> Telemetry {
+        self.features = features.to_vec();
+        self
+    }
+
+    /// Not used by every product; kept so the shared module stays identical.
+    #[allow(dead_code)]
     pub fn disabled() -> Telemetry {
         Telemetry {
             enabled: false,
@@ -300,18 +332,21 @@ impl Telemetry {
             distinct_id: String::new(),
             identity: IdentitySource::Ephemeral,
             session_id: String::new(),
+            features: Vec::new(),
             queue: std::sync::Mutex::new(Vec::new()),
         }
     }
 
     #[doc(hidden)]
+    #[allow(dead_code)]
     pub fn for_test(product: &str, version: &str, host: &str) -> Telemetry {
-        let mut t = Telemetry::new(product, version, "CICDBAR_NO_TELEMETRY", false);
+        let mut t = Telemetry::new(product, version, false);
         t.host = host.to_string();
         t
     }
 
     #[doc(hidden)]
+    #[allow(dead_code)]
     pub fn for_test_ephemeral(product: &str, version: &str, host: &str) -> Telemetry {
         let mut t = Telemetry::for_test(product, version, host);
         t.identity = IdentitySource::Ephemeral;
@@ -362,7 +397,7 @@ impl Telemetry {
         }
         let mut p = self.envelope();
         for (k, v) in props {
-            if property_allowed(k, &v) {
+            if property_allowed(k, &v, &self.features) {
                 p.insert(k.to_string(), v.to_json());
             }
         }

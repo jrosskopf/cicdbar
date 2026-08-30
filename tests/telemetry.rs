@@ -29,7 +29,7 @@ fn recv(rx: &mpsc::Receiver<String>) -> serde_json::Value {
 }
 
 fn telemetry(url: &str) -> Telemetry {
-    Telemetry::for_test("cicdbar", "9.9.9", url)
+    Telemetry::for_test("cicdbar", "9.9.9", url).with_features(&["spend_shown"])
 }
 
 #[test]
