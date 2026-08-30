@@ -214,3 +214,49 @@ fn an_idle_org_reporting_null_usage_is_not_an_error() {
         serde_json::from_str(r#"{"amount_cents":140,"charges":null}"#).expect("null charges");
     assert_eq!(p.amount, Usd::from_f64(1.40));
 }
+
+#[test]
+fn a_failed_auth_response_must_not_destroy_a_working_credential() {
+    // The durable remember_web cookie is what re-establishes a session. If a
+    // 401 response is allowed to rewrite the jar, one bad response can leave
+    // the install permanently unable to authenticate -- which is exactly what
+    // happened in practice on 2026-08-30.
+    let dir = std::env::temp_dir().join(format!("cicdbar-jar-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("session");
+    std::fs::write(
+        &file,
+        "remember_web_abc=durable-value; blacksmith_session=stale-value",
+    )
+    .unwrap();
+
+    // A real server that rejects and tries to clear the cookies, as a logout
+    // or an invalidated session would.
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", server.server_addr());
+    std::thread::spawn(move || {
+        for req in server.incoming_requests() {
+            let resp = tiny_http::Response::from_string("{\"message\":\"Unauthenticated.\"}")
+                .with_status_code(401)
+                .with_header(
+                    tiny_http::Header::from_bytes(
+                        &b"Set-Cookie"[..],
+                        &b"remember_web_abc=; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT"[..],
+                    )
+                    .unwrap(),
+                );
+            let _ = req.respond(resp);
+        }
+    });
+
+    let client = blacksmith::Dashboard::from_cookie_file(&file)
+        .expect("client")
+        .with_base(base);
+    let _ = client.projected("acme");
+
+    let after = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        after.contains("remember_web_abc=durable-value"),
+        "a 401 destroyed the durable credential; jar is now: {after}"
+    );
+}

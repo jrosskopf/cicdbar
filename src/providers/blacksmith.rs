@@ -284,7 +284,20 @@ impl Dashboard {
 
     /// Merge Set-Cookie from a response and persist, so the rotated session
     /// survives to the next exec of the binary.
+    ///
+    /// Two rules learned the hard way, after a live session became
+    /// unrecoverable:
+    ///
+    /// * **Only a successful response may rewrite the jar.** A 401 is exactly
+    ///   when the server clears cookies, and letting a failed auth overwrite
+    ///   the credential turns a recoverable session into a dead one.
+    /// * **A cleared value never replaces a good one.** `Set-Cookie: x=;
+    ///   Max-Age=0` is a deletion; storing the empty string would keep the
+    ///   name and lose the credential.
     fn absorb_cookies(&self, resp: &reqwest::blocking::Response) {
+        if !resp.status().is_success() {
+            return;
+        }
         let mut changed = false;
         {
             let mut jar = self.cookies.lock().unwrap();
@@ -297,6 +310,10 @@ impl Dashboard {
                     continue;
                 };
                 let (k, v) = (k.trim().to_string(), v.trim().to_string());
+                // A deletion must not overwrite a working value.
+                if v.is_empty() {
+                    continue;
+                }
                 if jar.get(&k).map(|old| old != &v).unwrap_or(true) {
                     jar.insert(k, v);
                     changed = true;
