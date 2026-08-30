@@ -260,3 +260,68 @@ fn a_failed_auth_response_must_not_destroy_a_working_credential() {
         "a 401 destroyed the durable credential; jar is now: {after}"
     );
 }
+
+// ---- what you actually pay, not what you used ----
+
+#[test]
+fn credits_are_subtracted_from_projected_usage() {
+    use cicdbar::providers::blacksmith::{net_due, Credits};
+    let gross = Usd::from_f64(10.98);
+
+    // A coupon larger than usage means nothing is due.
+    let c = Credits {
+        wallet_credit: Usd::zero(),
+        fixed_coupon: Usd::from_f64(12.00),
+        discount_percent: None,
+    };
+    assert_eq!(net_due(gross, &c), Usd::zero());
+
+    // A partial coupon leaves the remainder.
+    let c = Credits {
+        wallet_credit: Usd::zero(),
+        fixed_coupon: Usd::from_f64(4.00),
+        discount_percent: None,
+    };
+    assert_eq!(net_due(gross, &c), Usd::from_f64(6.98));
+
+    // Wallet credit stacks with the coupon.
+    let c = Credits {
+        wallet_credit: Usd::from_f64(2.00),
+        fixed_coupon: Usd::from_f64(4.00),
+        discount_percent: None,
+    };
+    assert_eq!(net_due(gross, &c), Usd::from_f64(4.98));
+
+    // A percentage discount applies to usage before credits.
+    let c = Credits {
+        wallet_credit: Usd::zero(),
+        fixed_coupon: Usd::zero(),
+        discount_percent: Some(50.0),
+    };
+    assert_eq!(net_due(gross, &c), Usd::from_f64(5.49));
+
+    // Never negative, however generous the credits.
+    let c = Credits {
+        wallet_credit: Usd::from_f64(999.0),
+        fixed_coupon: Usd::from_f64(999.0),
+        discount_percent: Some(100.0),
+    };
+    assert_eq!(net_due(gross, &c), Usd::zero());
+
+    // No credits at all means you pay the usage.
+    let c = Credits::default();
+    assert_eq!(net_due(gross, &c), gross);
+}
+
+#[test]
+#[ignore = "talks to the real session D-Bus and notification daemon"]
+fn the_real_dashboard_reports_credits() {
+    let client = blacksmith::Dashboard::from_cookie_file(&cookie_file()).expect("client");
+    let credits = client.credits("DataZooDE").expect("credits");
+    let gross = client.projected("DataZooDE").expect("projected").amount;
+    let net = blacksmith::net_due(gross, &credits);
+
+    // The invariants, rather than figures that move by the hour.
+    assert!(net <= gross, "net {net} must not exceed gross {gross}");
+    assert!(net >= Usd::zero(), "net must never be negative");
+}

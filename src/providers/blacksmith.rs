@@ -190,6 +190,45 @@ fn usd_from_cents<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Usd, D::Erro
     Ok(Usd::from_micros((cents * 10_000.0).round() as i64))
 }
 
+/// Credits and discounts that stand between usage and the bill.
+///
+/// `billing/projected` reports **gross usage**, not what you owe: a coupon or
+/// wallet credit can take the actual amount to zero. Reporting the gross
+/// figure overstates what Blacksmith costs, which is the same mistake as
+/// taking GitHub's storage from the wrong endpoint.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct Credits {
+    #[serde(
+        rename = "wallet_credit_cents",
+        deserialize_with = "usd_from_cents",
+        default
+    )]
+    pub wallet_credit: Usd,
+    #[serde(
+        rename = "fixed_coupon_cents",
+        deserialize_with = "usd_from_cents",
+        default
+    )]
+    pub fixed_coupon: Usd,
+    #[serde(default)]
+    pub discount_percent: Option<f64>,
+}
+
+/// What is actually due: usage less any percentage discount, then less the
+/// coupon and wallet credit, floored at zero.
+pub fn net_due(gross: Usd, credits: &Credits) -> Usd {
+    let after_percent = match credits.discount_percent {
+        Some(p) if p > 0.0 => gross * ((100.0 - p.clamp(0.0, 100.0)) / 100.0),
+        _ => gross,
+    };
+    let deductions = credits.fixed_coupon + credits.wallet_credit;
+    if deductions >= after_percent {
+        Usd::zero()
+    } else {
+        after_percent - deductions
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct CoreUsage {
     /// The API sends an explicit `null` here when nothing is running, which
@@ -394,6 +433,11 @@ impl Dashboard {
     /// Month-to-date charge for the current billing period.
     pub fn projected(&self, org: &str) -> anyhow::Result<Projected> {
         self.get(&format!("/api/user/github/orgs/{org}/billing/projected"))
+    }
+
+    /// Credits and discounts applied to this period.
+    pub fn credits(&self, org: &str) -> anyhow::Result<Credits> {
+        self.get(&format!("/api/user/github/orgs/{org}/billing/credits"))
     }
 
     /// Runner capacity in use right now.

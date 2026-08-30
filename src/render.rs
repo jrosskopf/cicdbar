@@ -244,6 +244,18 @@ pub fn tooltip(s: &Snapshot) -> String {
             )
         ));
     }
+    if s.blacksmith_credit > Usd::zero() {
+        t.push_str(&format!(
+            " {}\n",
+            span(
+                &theme.dim,
+                &escape(&format!(
+                    "     {} used, {} credit applied",
+                    s.blacksmith_gross, s.blacksmith_credit
+                ))
+            )
+        ));
+    }
     if let Some((jobs, vcpus)) = s.bs_live {
         t.push_str(&format!(
             " {}\n",

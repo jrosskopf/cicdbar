@@ -176,3 +176,34 @@ fn demo_scenarios_never_leak_a_real_organisation() {
         }
     }
 }
+
+#[test]
+fn a_zero_blacksmith_bill_explains_itself() {
+    // "$0.00" with no context reads as "no data" or "nothing ran". When the
+    // reason is a credit, say so -- the whole point of this widget is that a
+    // number is never ambiguous.
+    let mut s = Snapshot::demo();
+    s.blacksmith = Some(Usd::zero());
+    s.blacksmith_is_estimate = false;
+    s.blacksmith_gross = Usd::from_f64(10.98);
+    s.blacksmith_credit = Usd::from_f64(12.00);
+    let tip = render::tooltip(&s);
+    assert!(
+        tip.contains("$10.98"),
+        "gross usage should be visible: {tip}"
+    );
+    assert!(
+        tip.contains("credit"),
+        "the reason for $0.00 should be stated"
+    );
+}
+
+#[test]
+fn no_credit_line_when_there_is_no_credit() {
+    let mut s = Snapshot::demo();
+    s.blacksmith = Some(Usd::from_f64(4.20));
+    s.blacksmith_is_estimate = false;
+    s.blacksmith_gross = Usd::from_f64(4.20);
+    s.blacksmith_credit = Usd::zero();
+    assert!(!render::tooltip(&s).contains("credit"));
+}

@@ -20,6 +20,10 @@ pub struct Snapshot {
     pub blacksmith: Option<Usd>,
     pub blacksmith_estimate: Usd,
     pub blacksmith_is_estimate: bool,
+    /// Usage before credits, and the credit applied. Shown so a $0.00 bill
+    /// explains itself rather than reading as "no data".
+    pub blacksmith_gross: Usd,
+    pub blacksmith_credit: Usd,
     pub budget: Usd,
     pub projected: Usd,
     pub running: usize,
@@ -47,6 +51,8 @@ impl Snapshot {
             blacksmith: None,
             blacksmith_estimate: Usd::zero(),
             blacksmith_is_estimate: true,
+            blacksmith_gross: Usd::zero(),
+            blacksmith_credit: Usd::zero(),
             budget: Usd::zero(),
             projected: Usd::zero(),
             running: 0,

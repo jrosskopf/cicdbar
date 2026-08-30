@@ -233,13 +233,19 @@ fn run(args: &Args) -> anyhow::Result<String> {
             Ok(dash) => {
                 let key = format!("blacksmith-{org}");
                 match cache.get_or_refresh(&key, billing_ttl, || {
-                    dash.projected(&org)
-                        .map(|p| p.amount)
-                        .map_err(|e| e.to_string())
+                    // projected reports gross usage; credits stand between
+                    // that and the bill. Reporting gross overstates the cost,
+                    // sometimes by the whole of it.
+                    let gross = dash.projected(&org).map_err(|e| e.to_string())?.amount;
+                    let credits = dash.credits(&org).unwrap_or_default();
+                    let applied = gross - blacksmith::net_due(gross, &credits);
+                    Ok::<_, String>((blacksmith::net_due(gross, &credits), gross, applied))
                 }) {
-                    Ok((amount, freshness)) => {
+                    Ok(((amount, gross, credit), freshness)) => {
                         note_stale(&freshness, &mut oldest_stale);
                         snap.blacksmith = Some(amount);
+                        snap.blacksmith_gross = gross;
+                        snap.blacksmith_credit = credit;
                         snap.blacksmith_is_estimate = false;
                     }
                     Err(e) => snap.notes.push(format!("blacksmith: {e}")),
