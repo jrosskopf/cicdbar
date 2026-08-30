@@ -1,6 +1,6 @@
 [package]
 name = "cicdbar"
-version = "2026.8.30"
+version = "2026.8.31"
 edition = "2021"
 rust-version = "1.85"
 description = "waybar widget showing GitHub Actions and Blacksmith CI/CD spend, plus live job status"

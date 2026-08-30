@@ -142,3 +142,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          # PyPI never accepts a re-upload of a version, not even after
+          # deleting it. Without this, re-running a release turns the whole
+          # workflow red for a file that is already where it should be.
+          skip-existing: true
